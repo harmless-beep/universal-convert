@@ -145,6 +145,12 @@ The other platforms work the same way, just wherever their menu puts it.
 
 If a file is broken it fails on its own and the rest keep going.
 
+## Demo video
+
+<video width="100%" max-width="640" controls autoplay muted loop playsinline>
+  <source src="brag/brag.mp4" type="video/mp4">
+</video>
+
 ## How it works (the one clever bit)
 
 Windows Explorer launches a separate process for *each* selected file, which

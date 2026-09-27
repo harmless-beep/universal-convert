@@ -1,1 +1,0 @@
-Made Universal Convert. Right-click any files — images, PDFs, Office docs — and convert them in one dialog. Batch resize, compress, merge, split, convert. No editor, no upload, just the context menu you already use.

@@ -6,6 +6,9 @@ __pycache__/
 # project-local virtualenv (created by installers/*)
 .venv/
 
+# brag build artifacts
+brag-output/
+
 # packaging (PyInstaller)
 build/
 dist/

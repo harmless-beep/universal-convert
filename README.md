@@ -147,7 +147,7 @@ If a file is broken it fails on its own and the rest keep going.
 
 ## Demo video
 
-![Universal Convert — right-click to convert](brag.mp4)
+![Universal Convert — right-click to convert](brag.gif)
 
 ## How it works (the one clever bit)
 

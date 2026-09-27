@@ -6,6 +6,28 @@ pick what you want, it does the thing.
 I got tired of opening a full editor just to shrink a photo or glue two PDFs
 together, so this exists now.
 
+## Download
+
+Pre-built packages are on the
+[Releases page](https://github.com/harmless-beep/universal-convert/releases)
+- no Python required:
+
+| Platform | Grab this | What you get |
+| --- | --- | --- |
+| Windows | `Universal-Convert-<ver>-windows.exe` | one file, double-click it |
+| Windows (CLI) | `Universal-Convert-<ver>-windows-cli.exe` | same build with a console, for the command-line examples below |
+| macOS | `Universal-Convert-<ver>-macos.dmg` | open it, drag the app into Applications |
+| Linux | `Universal-Convert-<ver>-linux-x86_64.AppImage` | `chmod +x` it, then double-click (a plain `.tar.gz` if AppImage tooling is missing) |
+
+Every package is built and smoke tested in CI - the packaged binary has to
+convert a real image before it gets attached - and `SHA256SUMS.txt` sits in
+the release next to them.
+
+Double-clicking the app with no files selected opens a file picker, so the
+download is usable on its own. The right-click menu entry is separate
+(`installers/` below), since registering a menu is the part a lone executable
+cannot do for itself.
+
 ## What it handles
 
 **Images** (jpg, jpeg, png, webp, gif, bmp, tiff)
@@ -164,3 +186,16 @@ python main.py --probe file  # prints the aggregated selection
 
 The tests generate their own fixtures (images, a 3-page PDF, minimal
 docx/pptx/xlsx), so there's nothing extra to download first.
+
+Cutting a release - the same steps CI runs when a `v*` tag is pushed:
+
+```bash
+python installers/make_icon.py                       # icon art -> .png/.ico/.icns
+python installers/build_release.py --version 0.1.0   # build, smoke test, package
+```
+
+Do that in an environment holding only `requirements.txt` plus `pyinstaller`.
+PyInstaller packs whatever happens to be importable in the current Python, so
+in a kitchen-sink environment you get a kitchen-sink binary - the smoke test
+in `build_release.py` is what stops a broken or bloated package from being
+published.

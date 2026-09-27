@@ -3,6 +3,9 @@ logs/
 *.pyc
 __pycache__/
 
+# project-local virtualenv (created by installers/*)
+.venv/
+
 # packaging (PyInstaller)
 build/
 dist/

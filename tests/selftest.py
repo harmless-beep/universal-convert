@@ -566,6 +566,98 @@ def test_cli(fx):
           proc.stdout + proc.stderr)
 
 
+def _heredocs(script: str, marker: str) -> list:
+    """Bodies of every `<<MARKER` / `<<'MARKER'` block in *script*."""
+    bodies, pos = [], 0
+    while True:
+        i_plain = script.find("<<" + marker, pos)
+        i_quoted = script.find("<<'" + marker + "'", pos)
+        candidates = [i for i in (i_plain, i_quoted) if i >= 0]
+        if not candidates:
+            return bodies
+        i = min(candidates)
+        start = script.index("\n", i) + 1
+        end = script.index("\n" + marker + "\n", start)
+        bodies.append(script[start:end])
+        pos = end + len(marker) + 2
+
+
+def _executed_sudo(script: str) -> list:
+    """Lines that would actually run sudo (messages that merely mention it
+    inside a string are fine)."""
+    return [ln for ln in script.splitlines()
+            if ln.strip().startswith("sudo ")]
+
+
+def test_installers():
+    """The installers are the first thing a user runs, so their brokenness
+    has to be caught by tests, not by bug reports: no interactive prompts,
+    no system-Python pokes, and the artifacts they generate must parse."""
+    import plistlib
+
+    print("\n== installers ==")
+    ps = (ROOT / "installers" / "windows.ps1").read_text(encoding="utf-8")
+    mac = (ROOT / "installers" / "macos.sh").read_text(encoding="utf-8")
+    lin = (ROOT / "installers" / "linux.sh").read_text(encoding="utf-8")
+
+    check("windows: no interactive prompts", "Read-Host" not in ps)
+    check("windows: installs into a project venv",
+          ".venv" in ps and "pip install --user" not in ps
+          and "'-r', $Reqs" in ps)
+    check("windows: exe mode registered without Python", "-ExePath" in ps)
+
+    for name, src in (("macos", mac), ("linux", lin)):
+        code = "\n".join(ln for ln in src.splitlines()
+                          if not ln.strip().startswith("#"))
+        check(f"{name}: no pip --user (PEP 668 would reject it)",
+              "pip install --user" not in code)
+        check(f"{name}: never executes sudo", not _executed_sudo(src),
+              "; ".join(_executed_sudo(src)))
+        check(f"{name}: installs into a project venv",
+              ".venv" in src and "requirements.txt" in src)
+
+    plistlib.loads(_heredocs(mac, "PLIST")[0].encode("utf-8"))
+    check("macos: Info.plist parses", True)
+
+    wflow = _heredocs(mac, "WFLOW")[0]
+    check("macos: workflow carries a launcher placeholder",
+          "@@UC_LAUNCHER@@" in wflow)
+    plistlib.loads(wflow.replace("@@UC_LAUNCHER@@",
+                                 "/Users/x/.local/bin/universal-convert")
+                        .encode("utf-8"))
+    check("macos: document.wflow parses with the wrapper path injected", True)
+    wrapper = next(b for b in _heredocs(mac, "EOF") if "exec" in b)
+    check("macos: wrapper execs the venv python",
+          'exec "$VENV_PY" "$MAIN_PY" "\\$@"' in wrapper, wrapper)
+
+    check("linux: Plasma 6 and Plasma 5 service menu paths",
+          "kio/servicemenus" in lin and "kservices5/ServiceMenus" in lin)
+    nautilus = next(b for b in _heredocs(lin, "EOF") if "exec" in b)
+    check("linux: nautilus script execs the venv python",
+          'exec "$VENV_PY" "$MAIN_PY" "\\$@"' in nautilus, nautilus)
+    check("linux: dolphin/launcher Exec quotes both venv paths",
+          lin.count('Exec=\\"$VENV_PY\\" \\"$MAIN_PY\\" %F')
+          + lin.count('Exec="$VENV_PY" "$MAIN_PY" %F') >= 2)
+
+    # PATH's bash may be WSL's launcher (useless without a distro), so probe
+    # candidates until one behaves like a real shell; otherwise skip.
+    candidates = [shutil.which("bash")]
+    if sys.platform == "win32":
+        candidates += [r"C:\Program Files\Git\bin\bash.exe",
+                       r"C:\Program Files (x86)\Git\bin\bash.exe"]
+    bash = next((c for c in candidates if c and subprocess.run(
+        [c, "-c", "exit 0"], capture_output=True).returncode == 0), None)
+    if bash:
+        rc_mac = subprocess.run([bash, "-n", str(ROOT / "installers" / "macos.sh")],
+                                capture_output=True, text=True).returncode
+        rc_lin = subprocess.run([bash, "-n", str(ROOT / "installers" / "linux.sh")],
+                                capture_output=True, text=True).returncode
+        check("shell installers pass bash -n", rc_mac == 0 and rc_lin == 0,
+              f"macos={rc_mac} linux={rc_lin}")
+    else:
+        print("  [SKIP] no usable bash on PATH - syntax check skipped")
+
+
 def main() -> int:
     print(f"Universal Convert selftest  (workdir: {WORK})")
     fx = make_fixtures()
@@ -580,6 +672,7 @@ def main() -> int:
     test_frozen_paths()
     test_aggregation()
     test_cli(fx)
+    test_installers()
 
     print(f"\nRESULT: {PASS} passed, {FAIL} failed")
     shutil.rmtree(WORK, ignore_errors=True)

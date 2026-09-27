@@ -70,6 +70,35 @@ one of them takes `--uninstall` / `-Uninstall` and keeps your config files.
 You need Python 3.9+ with tkinter. LibreOffice is only needed for Office
 document conversions, images and PDFs work fine without it.
 
+## Using it
+
+Screenshots are from Windows, because that's what I had to take pictures of.
+The other platforms work the same way, just wherever their menu puts it.
+
+1. Select your files, right-click one of them, pick **Convert With...**
+
+   ![Windows context menu with Convert With... in it](docs/step1-menu.png)
+
+2. One dialog for the whole batch. Pick what should happen, pick where the
+   output lands, hit Convert. Here it's a folder of 40 PNGs going to JPG.
+
+   ![Dialog: 40 files selected, Convert image format, output to a Converted subfolder](docs/step2-options.png)
+
+3. It works through them one at a time and tells you which file it's on.
+
+   ![Progress bar at 40%, converting shot_15.png](docs/step3-progress.png)
+
+4. When the bar fills up, the status line goes green.
+
+   ![Finished: All 40 files converted](docs/step4-done.png)
+
+5. Then you get a per-file list, so if something didn't work out you can see
+   which one it was.
+
+   ![Results window listing every converted file](docs/step5-results.png)
+
+If a file is broken it fails on its own and the rest keep going.
+
 ## How it works (the one clever bit)
 
 Windows Explorer launches a separate process for *each* selected file, which

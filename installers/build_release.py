@@ -32,6 +32,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
+# PyInstaller's raw output lives outside dist/, so that everything in dist/
+# is a finished, renamed artifact (and nothing else gets uploaded to a release)
+PYI_DIST = BUILD / "pyi-dist"
 ICONS = ROOT / "installers" / "icons"
 
 APPHASH = "universal-convert"
@@ -57,7 +60,11 @@ def ensure_icons() -> None:
 
 
 def pyinstaller(args: list[str]) -> None:
-    sh([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", *args])
+    sh([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
+        "--distpath", str(PYI_DIST),
+        "--workpath", str(BUILD / "pyi-work"),
+        "--specpath", str(BUILD),
+        *args])
 
 
 def common_flags(name: str) -> list[str]:
@@ -131,7 +138,7 @@ def artifact_name(version: str, suffix: str) -> Path:
 
 def build_windows(version: str) -> list[Path]:
     pyinstaller(common_flags("UniversalConvert"))
-    exe = DIST / "UniversalConvert.exe"
+    exe = PYI_DIST / "UniversalConvert.exe"
     if not exe.exists():
         raise SystemExit("windows: build produced no UniversalConvert.exe")
 
@@ -150,7 +157,7 @@ def build_windows(version: str) -> list[Path]:
         ])
     except subprocess.CalledProcessError:
         cli_ok = False
-    cli_exe = DIST / "UniversalConvertCLI.exe"
+    cli_exe = PYI_DIST / "UniversalConvertCLI.exe"
     if not cli_exe.exists():
         cli_ok = False
 
@@ -170,7 +177,7 @@ def build_windows(version: str) -> list[Path]:
 
 def build_macos(version: str) -> list[Path]:
     pyinstaller(common_flags("UniversalConvert"))
-    app = DIST / "UniversalConvert.app"
+    app = PYI_DIST / "UniversalConvert.app"
     if not app.exists():
         raise SystemExit("macos: build produced no UniversalConvert.app")
 
@@ -199,7 +206,7 @@ def _download(url: str, dest: Path) -> None:
 
 def build_linux(version: str) -> list[Path]:
     pyinstaller(common_flags(APPHASH))
-    binary = DIST / APPHASH
+    binary = PYI_DIST / APPHASH
     if not binary.exists():
         raise SystemExit("linux: build produced no binary")
     run_smoke(binary)
@@ -264,6 +271,9 @@ def main() -> int:
     args = parser.parse_args()
 
     ensure_icons()
+    # dist/ holds finished artifacts only: start from empty so a stale build
+    # can never be mistaken for (or uploaded as) this one
+    shutil.rmtree(DIST, ignore_errors=True)
     DIST.mkdir(exist_ok=True)
     BUILD.mkdir(exist_ok=True)
 

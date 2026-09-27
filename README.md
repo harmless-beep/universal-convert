@@ -56,11 +56,27 @@ going.
 
 ## Install
 
+Every installer builds a `.venv` inside the project folder, installs
+Pillow / pypdf / PyMuPDF into *that*, and registers the menu entry for the
+current user only. No admin rights, no sudo, nothing system-wide - your
+system Python stays untouched, which also sidesteps Debian/Ubuntu's
+"externally managed environment" pip error.
+
 **Windows**
 
 ```
 powershell -ExecutionPolicy Bypass -File installers/windows.ps1
 ```
+
+Downloaded the exe instead of cloning? Register the menu straight from it,
+no Python involved:
+
+```
+powershell -ExecutionPolicy Bypass -File installers/windows.ps1 -ExePath .\Universal-Convert-0.1.0-windows.exe
+```
+
+Other switches: `-InstallLibreOffice` (via winget), `-SkipLibreOffice`,
+`-Uninstall`.
 
 Right-click a file and look for **Convert With...**. On Windows 11 it sits
 under *Show more options* (or Shift+F10), which is just how regular menu
@@ -74,7 +90,8 @@ bash installers/macos.sh
 
 Appears under Finder → right-click → Quick Actions. If it doesn't show up,
 check System Settings → Privacy & Security → Extensions → Finder and switch it
-on.
+on. `--install-libreoffice` adds LibreOffice via Homebrew, `--uninstall`
+removes the Quick Action.
 
 **Linux**
 
@@ -83,14 +100,15 @@ bash installers/linux.sh
 ```
 
 Nautilus puts it under right-click → Scripts, Dolphin shows it directly on
-right-click. Run `nautilus -q` afterwards if GNOME hasn't picked it up yet.
+right-click (both the Plasma 6 and Plasma 5 service-menu paths are written).
+Run `nautilus -q` afterwards if GNOME hasn't picked it up yet. `--uninstall`
+removes the entries again.
 
-The installers check your Python, `pip install Pillow pypdf PyMuPDF`, and
-register the menu entry for the current user only, so no admin or sudo. Every
-one of them takes `--uninstall` / `-Uninstall` and keeps your config files.
-
-You need Python 3.9+ with tkinter. LibreOffice is only needed for Office
-document conversions, images and PDFs work fine without it.
+You need Python 3.9+ with tkinter - on Debian/Ubuntu that's
+`sudo apt install python3 python3-tk python3-venv`. LibreOffice is only
+needed for Office document conversions, images and PDFs work fine without
+it. Uninstalling keeps your config; the `.venv` is left behind too, delete
+it by hand if you want the space back.
 
 ## Using it
 

@@ -65,6 +65,45 @@ def show_info_box(message: str) -> None:
         pass
 
 
+def pick_files() -> list[str] | None:
+    """File chooser shown when the app is launched with no arguments.
+
+    Double-clicking the app (or a frozen build of it) must do something
+    useful instead of printing help into a window nobody sees.
+
+    Returns the chosen paths, [] when the user cancelled, or None when no
+    display is available (headless shell) - the caller then falls back to
+    the help text.
+    """
+    root = None
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        exts = sorted(detect.IMAGE_EXTS | detect.PDF_EXTS | detect.OFFICE_EXTS)
+        supported = " ".join(f"*{ext}" for ext in exts)
+        root = tk.Tk()
+        root.withdraw()
+        root.update()
+        picks = filedialog.askopenfilenames(
+            parent=root,
+            title="Choose files to convert",
+            filetypes=[
+                ("Images, PDFs and Office documents", supported),
+                ("All files", "*.*"),
+            ],
+        )
+        return [str(p) for p in picks]
+    except Exception:  # noqa: BLE001 - no display at all
+        return None
+    finally:
+        if root is not None:
+            try:
+                root.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def run_gui(files: list[str]) -> int:
     """Open the dialog for the aggregated selection."""
     # Tk first: dialog.py imports tkinter at module import time.
@@ -242,8 +281,15 @@ def main(argv: list[str] | None = None) -> int:
 
         files = [f for f in args.files]
         if not files:
-            build_cli_parser().print_help()
-            return 2
+            picked = pick_files()
+            if picked is None:
+                # headless (or a display we cannot talk to): keep the old
+                # behaviour of printing the usage text
+                build_cli_parser().print_help()
+                return 2
+            if not picked:
+                return 0  # the user closed the chooser without picking
+            files = picked
         return run_gui(files)
 
     except UserError as exc:

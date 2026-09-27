@@ -17,25 +17,12 @@ from __future__ import annotations
 
 import copy
 import json
-import os
-import sys
 from pathlib import Path
 from typing import Any
 
-from .errors import PROJECT_ROOT, get_logger
+from .errors import PROJECT_ROOT, get_logger, user_config_dir
 
 DEFAULTS_FILE = PROJECT_ROOT / "config" / "settings.json"
-
-
-def user_config_dir() -> Path:
-    if sys.platform == "win32":
-        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-        return Path(base) / "UniversalConvert"
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "UniversalConvert"
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "universal-convert"
-
 
 USER_CONFIG_FILE = user_config_dir() / "settings.json"
 

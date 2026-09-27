@@ -35,8 +35,13 @@ QUEUE_LOCK_TIMEOUT_S = 3.0
 
 
 def _queue_dir() -> Path:
+    # The tag must be identical for every sibling process of ONE install:
+    # that is how they find each other's queue lines. A frozen build unpacks
+    # to a fresh random temp dir on every launch, so tag the executable
+    # instead of the (per-run) project root.
+    anchor = Path(sys.executable) if getattr(sys, "frozen", False) else PROJECT_ROOT
     tag = hashlib.sha256(
-        str(PROJECT_ROOT).lower().encode("utf-8", "replace")
+        str(anchor).lower().encode("utf-8", "replace")
     ).hexdigest()[:8]
     base = Path(os.environ.get("TEMP") or os.environ.get("TMP") or "/tmp")
     return base / f"universal-convert-{tag}"

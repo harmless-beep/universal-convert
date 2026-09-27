@@ -18,7 +18,38 @@ APP_NAME = "Universal Convert"
 
 # Project root = parent of this file's directory (core/.. )
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-LOG_DIR = PROJECT_ROOT / "logs"
+
+
+def user_config_dir() -> Path:
+    """The per-user, always-writable config directory.
+
+    Windows:  %APPDATA%\\UniversalConvert
+    macOS:    ~/Library/Application Support/UniversalConvert
+    Linux:    $XDG_CONFIG_HOME/universal-convert (default ~/.config/...)
+    """
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(base) / "UniversalConvert"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "UniversalConvert"
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "universal-convert"
+
+
+def log_dir() -> Path:
+    """Where the log file lives.
+
+    Source checkout:  <project>/logs
+    Frozen build:     next to the user settings - the build unpacks into a
+    per-run temp directory that is deleted when the app exits, which would
+    silently throw every log away (and break "Open log" in the dialog).
+    """
+    if getattr(sys, "frozen", False):
+        return user_config_dir() / "logs"
+    return PROJECT_ROOT / "logs"
+
+
+LOG_DIR = log_dir()
 LOG_FILE = LOG_DIR / "universal-convert.log"
 
 _logger: logging.Logger | None = None

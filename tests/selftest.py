@@ -462,6 +462,35 @@ def test_robustness(fx):
           str(output_dir_for(s2, [fx["photo_a"]], "same")))
 
 
+def test_frozen_paths():
+    """A frozen build unpacks into a temp dir that is deleted on exit, so the
+    paths that must outlive a launch (log, aggregation queue) have to move."""
+    from core import errors as err_mod
+    from platform_util import aggregate
+
+    print("\n== frozen build paths ==")
+
+    src_log = err_mod.log_dir()
+    src_queue = aggregate._queue_dir()
+
+    sys.frozen = True
+    try:
+        frozen_log = err_mod.log_dir()
+        frozen_queue = aggregate._queue_dir()
+    finally:
+        del sys.frozen
+
+    check("source runs still log inside the project",
+          src_log == err_mod.PROJECT_ROOT / "logs", str(src_log))
+    check("frozen builds log next to the user settings",
+          frozen_log == err_mod.user_config_dir() / "logs"
+          and frozen_log != src_log,
+          str(frozen_log))
+    check("frozen queue folder does not follow the per-run temp dir",
+          frozen_queue != src_queue and frozen_queue.parent == src_queue.parent,
+          f"frozen={frozen_queue} source={src_queue}")
+
+
 def test_aggregation():
     print("\n== aggregation (Windows multi-select) ==")
     if sys.platform != "win32":
@@ -548,6 +577,7 @@ def main() -> int:
     test_pdf(fx)
     test_office(fx, office)
     test_robustness(fx)
+    test_frozen_paths()
     test_aggregation()
     test_cli(fx)
 

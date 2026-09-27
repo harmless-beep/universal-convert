@@ -1,0 +1,4 @@
+# runtime dependencies (tkinter ships with Python)
+Pillow>=10.0
+pypdf>=4.0
+PyMuPDF>=1.24

@@ -1,0 +1,41 @@
+{
+  "output": {
+    "folder_mode": "subfolder",
+    "subfolder_name": "Converted",
+    "open_when_done": true,
+    "notify": true
+  },
+  "aggregation": {
+    "debounce_ms": 500,
+    "max_wait_ms": 1500
+  },
+  "presets": {
+    "thumbnail": 256,
+    "email": 1024,
+    "web": 1920,
+    "print": "A4@300"
+  },
+  "resize": {
+    "default_mode": "preset",
+    "default_preset": "web",
+    "default_width": 1920,
+    "default_height": 1080,
+    "keep_aspect": true
+  },
+  "compress": {
+    "default_quality": 85,
+    "auto": false,
+    "auto_target_kb": null
+  },
+  "convert": {
+    "default_format": "jpg",
+    "combined_pdf": true
+  },
+  "pdf": {
+    "default_dpi": 150,
+    "default_format": "png",
+    "lossy_compress": false,
+    "lossy_quality": 75
+  },
+  "last_used": {}
+}

@@ -6,6 +6,8 @@ pick what you want, it does the thing.
 I got tired of opening a full editor just to shrink a photo or glue two PDFs
 together, so this exists now.
 
+![Universal Convert — right-click to convert](brag.gif)
+
 ## Download
 
 Pre-built packages are on the
@@ -144,10 +146,6 @@ The other platforms work the same way, just wherever their menu puts it.
    ![Results window listing every converted file](docs/step5-results.png)
 
 If a file is broken it fails on its own and the rest keep going.
-
-## Demo video
-
-![Universal Convert — right-click to convert](brag.gif)
 
 ## How it works (the one clever bit)
 

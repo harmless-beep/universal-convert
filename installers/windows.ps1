@@ -49,7 +49,7 @@ function Test-Py($pythonExe) {
 # ---------------------------------------------------------------- uninstall
 if ($Uninstall) {
     Info "Removing the '$MenuTitle' context menu entry..."
-    if (Test-Path $RegKey) {
+    if (Test-Path -LiteralPath $RegKey) {
         Remove-Item -LiteralPath $RegKey -Recurse -Force
         OK "Removed $RegKey"
     } else {

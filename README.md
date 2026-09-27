@@ -152,7 +152,7 @@ Presets take a plain number (long edge in pixels) or a paper spec like
 ## Development
 
 ```bash
-python tests/selftest.py     # 27 checks, exit code 0 means green
+python tests/selftest.py     # PASS/FAIL per check, exit code 0 means green
 python main.py --probe file  # prints the aggregated selection
 ```
 

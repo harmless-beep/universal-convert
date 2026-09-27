@@ -2,103 +2,152 @@
 # =====================================================================
 # Universal Convert - macOS installer
 # =====================================================================
-# Creates a Finder Quick Action ("Convert With...") that passes the
-# selected files to main.py. Installs Python deps + LibreOffice when
-# missing. No admin rights required.
+# Creates a Finder Quick Action ("Convert With...") that runs main.py
+# out of a project-local .venv. Everything lives inside the project
+# folder plus one wrapper in ~/.local/bin - no sudo, nothing in
+# /usr/local, no prompts, and the system Python is never touched
+# (pip's "externally managed environment" errors cannot happen here).
 #
-#   install:    bash installers/macos.sh
-#   uninstall:  bash installers/macos.sh --uninstall
+#   install:             bash installers/macos.sh
+#   also LibreOffice:    bash installers/macos.sh --install-libreoffice
+#   uninstall:           bash installers/macos.sh --uninstall
+#   help:                bash installers/macos.sh --help
 #
-# The Quick Action appears in Finder under right-click -> Quick Actions
-# (older macOS: Services). It receives the full multi-selection in ONE
-# invocation; no IPC aggregation is needed on this OS.
+# The Quick Action appears under right-click -> Quick Actions (older
+# macOS: Services) and passes the whole multi-selection to main.py in
+# ONE invocation, so no IPC aggregation is needed on this OS.
 # =====================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 MAIN_PY="$PROJECT_DIR/main.py"
+REQS="$PROJECT_DIR/requirements.txt"
+VENV_DIR="$PROJECT_DIR/.venv"
+VENV_PY="$VENV_DIR/bin/python"
+WRAPPER="$HOME/.local/bin/universal-convert"
 
 SERVICES_DIR="$HOME/Library/Services"
 WORKFLOW_NAME="Convert With....workflow"
 WORKFLOW_DIR="$SERVICES_DIR/$WORKFLOW_NAME"
-PY_IN_WORKFLOW="/usr/local/bin/universal-convert-python"
-WRAPPER="/usr/local/bin/universal-convert"
+PLACEHOLDER="@@UC_LAUNCHER@@"
 
 info() { printf '\033[36m%s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m[OK]\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m[!!]\033[0m %s\n' "$*"; }
 fail() { printf '  \033[31m[XX]\033[0m %s\n' "$*"; exit 1; }
 
-if [[ "${1:-}" == "--uninstall" ]]; then
+usage() {
+  cat <<EOF
+Universal Convert - macOS installer
+
+  bash installers/macos.sh                   install (builds .venv, registers the
+                                             Finder Quick Action)
+  bash installers/macos.sh --install-libreoffice
+                                             also install LibreOffice via Homebrew
+                                             when it is missing
+  bash installers/macos.sh --uninstall       remove the Quick Action + wrapper
+  bash installers/macos.sh --help            this text
+EOF
+}
+
+UNINSTALL=0
+INSTALL_LO=0
+for arg in "$@"; do
+  case "$arg" in
+    --uninstall)          UNINSTALL=1 ;;
+    --install-libreoffice) INSTALL_LO=1 ;;
+    -h|--help)            usage; exit 0 ;;
+    *) fail "Unknown option: $arg (try --help)" ;;
+  esac
+done
+
+[[ "$(uname -s)" == "Darwin" ]] || fail "This script is for macOS. You are on $(uname -s)."
+
+# ---------------------------------------------------------------- uninstall
+if [[ "$UNINSTALL" == 1 ]]; then
   info "Removing Quick Action..."
   rm -rf "$WORKFLOW_DIR"
-  rm -f "$WRAPPER" "$PY_IN_WORKFLOW"
+  rm -f "$WRAPPER"
   /System/Library/CoreServices/pbs -flush 2>/dev/null || true
-  ok "Removed. (Config in ~/Library/Application Support/UniversalConvert kept.)"
+  # Files an older version of this installer may have left behind.
+  if [[ -e /usr/local/bin/universal-convert || -e /usr/local/bin/universal-convert-python ]]; then
+    rm -f /usr/local/bin/universal-convert /usr/local/bin/universal-convert-python 2>/dev/null \
+      || warn "Old /usr/local/bin wrappers need sudo: sudo rm -f /usr/local/bin/universal-convert*"
+  fi
+  ok "Removed. (config kept; delete $VENV_DIR by hand if you want the space back)"
   exit 0
 fi
 
-[[ "$(uname -s)" == "Darwin" ]] || fail "This script is for macOS. You are on $(uname -s)."
-[[ -f "$MAIN_PY" ]] || fail "main.py not found at $MAIN_PY"
+[[ -f "$MAIN_PY" ]] || fail "main.py not found at $MAIN_PY - run this from the repository."
 
 # ------------------------------------------------------------ 1. find python3
-info "Looking for Python 3..."
+info "Looking for Python 3 (3.9+, tkinter, venv)..."
 PY3=""
-for cand in python3 \
-            /usr/bin/python3 \
-            /opt/homebrew/bin/python3 \
-            /usr/local/bin/python3 \
-            "$HOME/Library/Python/3.x/bin/python3"; do
+for cand in python3 /usr/bin/python3 /opt/homebrew/bin/python3 /usr/local/bin/python3; do
   if command -v "$cand" >/dev/null 2>&1; then PY3="$(command -v "$cand")"; break; fi
 done
-if [[ -z "$PY3" ]]; then
-  fail "Python 3 not found. Install it via 'xcode-select --install' or brew install python3, then re-run."
-fi
+[[ -n "$PY3" ]] || fail "Python 3 not found. Install it via 'xcode-select --install' or 'brew install python3', then re-run."
+"$PY3" -c 'import sys; assert sys.version_info >= (3, 9)' 2>/dev/null \
+  || fail "$PY3 is older than 3.9. Install a newer Python (python.org or brew), then re-run."
+"$PY3" -c 'import tkinter' 2>/dev/null \
+  || fail "tkinter is missing from $PY3, so the dialog could never open."$'\n'"         python.org builds include it - install from https://www.python.org/downloads/"
+"$PY3" -c 'import venv' 2>/dev/null \
+  || fail "The venv module is missing from $PY3 - install a full Python (python.org or brew), not a partial build."
 ok "Python 3: $PY3"
 
-"$PY3" -c 'import tkinter' 2>/dev/null || warn "tkinter not importable - the dialog may fail. python.org installs include it."
+# ------------------------------------------------------- 2. project-local venv
+# Always rebuilt: idempotent, and a half-broken venv from an earlier run can
+# never leak into a working install.
+info "Creating $VENV_DIR ..."
+rm -rf "$VENV_DIR"
+"$PY3" -m venv "$VENV_DIR" >/dev/null \
+  || fail "python -m venv failed - install a full Python from python.org and re-run."
+[[ -x "$VENV_PY" ]] || fail "venv was created but $VENV_PY is missing."
+ok "Virtual environment created"
 
-# ------------------------------------------------------------ 2. pip deps
-info "Checking Python packages..."
-"$PY3" -m pip install --user --quiet pypdf PyMuPDF Pillow \
-  || warn "pip install failed - PDF actions may be unavailable."
-ok "Dependencies processed."
+info "Installing Pillow, pypdf, PyMuPDF into .venv ..."
+if [[ -f "$REQS" ]]; then
+  "$VENV_PY" -m pip install --quiet --disable-pip-version-check -r "$REQS" \
+    || fail "pip install failed. Try: $VENV_PY -m pip install Pillow pypdf PyMuPDF"
+else
+  "$VENV_PY" -m pip install --quiet --disable-pip-version-check Pillow pypdf PyMuPDF \
+    || fail "pip install failed."
+fi
+"$VENV_PY" -c 'import tkinter, PIL, pypdf, fitz' 2>/dev/null \
+  || fail "The environment is still missing packages after install."$'\n'"         Try: $VENV_PY -m pip install Pillow pypdf PyMuPDF"
+ok "Dependencies ready (Pillow, pypdf, PyMuPDF)"
 
 # ------------------------------------------------------------ 3. LibreOffice
 info "Checking LibreOffice..."
 LO="/Applications/LibreOffice.app/Contents/MacOS/soffice"
 if [[ -x "$LO" ]]; then
   ok "LibreOffice found."
-else
-  warn "LibreOffice not found - needed for Office/PDF document conversions."
+elif [[ "$INSTALL_LO" == 1 ]]; then
   if command -v brew >/dev/null 2>&1; then
-    read -r -p "Install LibreOffice now via Homebrew? [Y/n] " answer || answer="Y"
-    if [[ "${answer:-Y}" =~ ^[Yy]?$ ]]; then
-      brew install --cask libreoffice && ok "LibreOffice installed."
-    fi
+    info "Running: brew install --cask libreoffice"
+    brew install --cask libreoffice && ok "LibreOffice installed." \
+      || warn "brew failed - install LibreOffice from libreoffice.org if you need Office conversions."
   else
-    warn "Homebrew not found. Download from https://www.libreoffice.org/download/ and re-run."
+    warn "Homebrew not found. Download LibreOffice from https://www.libreoffice.org/download/"
   fi
+else
+  warn "LibreOffice not found - only needed for Office/PDF document conversions."
+  warn "  Images and PDFs work without it. To add it: bash installers/macos.sh --install-libreoffice"
 fi
 
-# ------------------------------------------------- 4. stable launcher paths
-# The .workflow plist should not embed a homebrew/venv path that may change,
-# so we point it at tiny stable wrappers instead.
-info "Creating launcher wrappers in /usr/local/bin (may ask for password)..."
-sudo mkdir -p /usr/local/bin
-sudo tee "$PY_IN_WORKFLOW" >/dev/null <<EOF
+# ------------------------------------------------------- 4. stable wrapper
+# The workflow calls a wrapper in ~/.local/bin (no sudo) instead of a venv
+# path, so the Quick Action survives a venv rebuild and doubles as a CLI:
+# ~/.local/bin/universal-convert photo.jpg
+info "Creating launcher wrapper $WRAPPER ..."
+mkdir -p "$(dirname "$WRAPPER")"
+cat > "$WRAPPER" <<EOF
 #!/bin/bash
-exec "$PY3" "\$@"
+exec "$VENV_PY" "$MAIN_PY" "\$@"
 EOF
-sudo chmod +x "$PY_IN_WORKFLOW"
-sudo tee "$WRAPPER" >/dev/null <<EOF
-#!/bin/bash
-export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/local/sbin:\$PATH"
-exec "$PY_IN_WORKFLOW" "$MAIN_PY" "\$@"
-EOF
-sudo chmod +x "$WRAPPER"
-ok "Wrappers created: $WRAPPER"
+chmod +x "$WRAPPER"
+ok "Wrapper created: $WRAPPER"
 
 # ------------------------------------------------------------ 5. the workflow
 info "Creating Quick Action bundle..."
@@ -194,7 +243,7 @@ cat > "$WORKFLOW_DIR/Contents/document.wflow" <<'WFLOW'
         <key>ActionParameters</key>
         <dict>
           <key>COMMAND_STRING</key>
-          <string>/usr/local/bin/universal-convert "$@"</string>
+          <string>"@@UC_LAUNCHER@@" "$@"</string>
           <key>CheckedForUserDefaultShell</key>
           <true/>
           <key>inputMethod</key>
@@ -344,6 +393,25 @@ cat > "$WORKFLOW_DIR/Contents/document.wflow" <<'WFLOW'
 </plist>
 WFLOW
 
+# The workflow plist is written verbatim (quoted heredoc) with a placeholder
+# for the wrapper path, so a home directory with spaces or shell specials in
+# it cannot break the quoting here. Substitution + validation both happen in
+# Python: byte-exact replace (no sed metacharacter headaches) and the result
+# must still parse as a plist before we tell the user it worked.
+"$PY3" - "$WORKFLOW_DIR/Contents/document.wflow" "$WRAPPER" "$PLACEHOLDER" <<'PYEOF' \
+  || fail "Could not write a valid workflow document."
+import plistlib, sys
+
+path, wrapper, placeholder = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path, "rb") as fh:
+    data = fh.read()
+if placeholder.encode() not in data:
+    raise SystemExit("placeholder missing from document.wflow")
+data = data.replace(placeholder.encode(), wrapper.encode("utf-8"))
+with open(path, "wb") as fh:
+    fh.write(data)
+plistlib.loads(data)  # must still be a well-formed plist
+PYEOF
 ok "Wrote $WORKFLOW_DIR"
 
 # --------------------------------------------------- 6. refresh services DB
@@ -355,4 +423,5 @@ ok "Done."
 echo
 info "Install complete."
 echo "  Finder: select files -> right-click -> Quick Actions -> 'Convert With...'"
+echo "  CLI:    $WRAPPER photo.jpg"
 echo "  (First use may require confirming in System Settings -> Privacy & Security)"

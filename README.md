@@ -80,15 +80,17 @@ The other platforms work the same way, just wherever their menu puts it.
    ![Windows context menu with Convert With... in it](docs/step1-menu.png)
 
 2. One dialog for the whole batch. Pick what should happen, pick where the
-   output lands, hit Convert. Here it's a folder of 40 PNGs going to JPG.
+   output lands - it shows you the exact folder before anything is written,
+   or send it somewhere else entirely - hit Convert. Here it's a folder of
+   40 PNGs going to JPG.
 
-   ![Dialog: 40 files selected, Convert image format, output to a Converted subfolder](docs/step2-options.png)
+   ![Dialog: 40 PNGs selected, converting to JPG, output folder shown](docs/step2-options.png)
 
 3. It works through them one at a time, telling you which file it's on and
    how far along you are. Changed your mind? **Cancel** stops it after the
    file it's already doing.
 
-   ![Progress bar at 40%, converting shot_15.png](docs/step3-progress.png)
+   ![Progress: 9 of 40 files done, converting shot_09.png](docs/step3-progress.png)
 
 4. When the bar fills up, the status line goes green.
 
@@ -97,7 +99,7 @@ The other platforms work the same way, just wherever their menu puts it.
 5. Then you get a per-file list - every file, in your own order, with the
    output name next to it. If something didn't work out you see the actual
    reason on that line instead of a bare ✗, plus an **Open log** button for
-   the full story.
+   the full story and **Copy all** if you just want the list.
 
    ![Results window listing every converted file](docs/step5-results.png)
 

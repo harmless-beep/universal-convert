@@ -6,7 +6,7 @@ pick what you want, it does the thing.
 I got tired of opening a full editor just to shrink a photo or glue two PDFs
 together, so this exists now.
 
-![Universal Convert — right-click to convert](brag.gif)
+![Universal Convert — right-click to convert](convert.gif)
 
 ## Download
 

@@ -84,7 +84,9 @@ The other platforms work the same way, just wherever their menu puts it.
 
    ![Dialog: 40 files selected, Convert image format, output to a Converted subfolder](docs/step2-options.png)
 
-3. It works through them one at a time and tells you which file it's on.
+3. It works through them one at a time, telling you which file it's on and
+   how far along you are. Changed your mind? **Cancel** stops it after the
+   file it's already doing.
 
    ![Progress bar at 40%, converting shot_15.png](docs/step3-progress.png)
 
@@ -92,8 +94,10 @@ The other platforms work the same way, just wherever their menu puts it.
 
    ![Finished: All 40 files converted](docs/step4-done.png)
 
-5. Then you get a per-file list, so if something didn't work out you can see
-   which one it was.
+5. Then you get a per-file list - every file, in your own order, with the
+   output name next to it. If something didn't work out you see the actual
+   reason on that line instead of a bare ✗, plus an **Open log** button for
+   the full story.
 
    ![Results window listing every converted file](docs/step5-results.png)
 

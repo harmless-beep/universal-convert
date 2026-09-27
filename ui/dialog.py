@@ -14,11 +14,11 @@ from __future__ import annotations
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import ttk
+from tkinter import filedialog, ttk
 from tkinter.font import Font
 
 from core import detect
-from core.batch import first_output, summarize
+from core.batch import first_output, output_dir_for, summarize
 from core.errors import (
     LOG_FILE,
     UserError,
@@ -79,13 +79,15 @@ class ConversionDialog:
 
         # ---- action list -----------------------------------------------
         ttk.Label(body, text="What should happen?", font=bold).pack(anchor="w")
-        self.action_var = tk.StringVar(
-            value=self.actions[0].id if self.actions else "")
+        self.action_var = tk.StringVar(value=self._default_action())
+        self._action_buttons: list[ttk.Radiobutton] = []
         for a in self.actions:
-            ttk.Radiobutton(
+            rb = ttk.Radiobutton(
                 body, text=a.label, value=a.id, variable=self.action_var,
                 command=self._on_action_change,
-            ).pack(anchor="w", padx=(12, 0))
+            )
+            rb.pack(anchor="w", padx=(12, 0))
+            self._action_buttons.append(rb)
         if not self.actions:
             ttk.Label(
                 body, foreground="#a02222",
@@ -104,22 +106,45 @@ class ConversionDialog:
         # ---- output folder ----------------------------------------------
         ttk.Separator(self.root).pack(fill="x", pady=2)
         out_row = ttk.Frame(self.root)
-        out_row.pack(fill="x", padx=10, pady=(0, 6))
+        out_row.pack(fill="x", padx=10, pady=(0, 2))
         ttk.Label(out_row, text="Save output:").pack(side="left")
         self.out_var = tk.StringVar(
             value=self.settings.get("output.folder_mode", "subfolder"))
-        ttk.Radiobutton(out_row, text="In a 'Converted' subfolder",
-                        value="subfolder", variable=self.out_var).pack(
-            side="left", padx=(8, 4))
-        ttk.Radiobutton(out_row, text="Next to the originals",
-                        value="same", variable=self.out_var).pack(side="left")
+        self._last_out_mode = self.out_var.get()
+        self._out_buttons = [
+            ttk.Radiobutton(out_row, text="Converted subfolder",
+                            value="subfolder", variable=self.out_var,
+                            command=self._on_out_change),
+            ttk.Radiobutton(out_row, text="Next to the originals",
+                            value="same", variable=self.out_var,
+                            command=self._on_out_change),
+            ttk.Radiobutton(out_row, text="Other…", value="custom",
+                            variable=self.out_var,
+                            command=self._on_out_change),
+        ]
+        self._out_buttons[0].pack(side="left", padx=(8, 4))
+        self._out_buttons[1].pack(side="left", padx=(0, 4))
+        self._out_buttons[2].pack(side="left")
+        self.out_preview = ttk.Label(self.root, foreground="#555",
+                                     wraplength=430, justify="left")
+        self.out_preview.pack(fill="x", padx=10, anchor="w", pady=(0, 4))
 
         # ---- progress + buttons ------------------------------------------
-        self.progress = ttk.Progressbar(self.root, mode="determinate", length=430)
-        self.progress.pack(fill="x", padx=10, pady=(2, 0))
-        self.status = ttk.Label(self.root, text=" ", foreground="#555",
+        bar_row = ttk.Frame(self.root)
+        bar_row.pack(fill="x", padx=10, pady=(2, 0))
+        self.progress = ttk.Progressbar(bar_row, mode="determinate", length=430)
+        self.progress.pack(side="left", fill="x", expand=True)
+        self.pct_label = ttk.Label(bar_row, text="", width=5, anchor="e",
+                                   foreground="#555")
+        self.pct_label.pack(side="right", padx=(6, 0))
+        # Two lines of room are always reserved, so a wrapped message cannot
+        # make the window jump while the run is on.
+        status_box = ttk.Frame(self.root, height=34)
+        status_box.pack(fill="x", padx=10, anchor="w", pady=(2, 0))
+        status_box.pack_propagate(False)
+        self.status = ttk.Label(status_box, text=" ", foreground="#555",
                                 wraplength=430, justify="left")
-        self.status.pack(fill="x", padx=10)
+        self.status.pack(fill="x", anchor="w")
 
         btns = ttk.Frame(self.root)
         btns.pack(fill="x", padx=10, pady=8)
@@ -143,6 +168,97 @@ class ConversionDialog:
         # Tk swallows callback exceptions (invisible under pythonw): log them
         # and put a visible line in the status area instead.
         self.root.report_callback_exception = self._callback_error
+        self._refresh_out_preview()
+        self._center_on_screen()
+
+    # -------------------------------------------------------------- layout
+    def _center_on_screen(self) -> None:
+        """Open in the middle of the screen instead of wherever the WM
+        decides (it also keeps the window off the taskbar corner)."""
+        try:
+            self.root.update_idletasks()
+            w = self.root.winfo_reqwidth()
+            h = self.root.winfo_reqheight()
+            x = max(0, (self.root.winfo_screenwidth() - w) // 2)
+            y = max(0, (self.root.winfo_screenheight() - h) // 3)
+            self.root.geometry(f"+{x}+{y}")
+        except tk.TclError:
+            pass
+
+    def _default_action(self) -> str:
+        """The action used last time, when it still fits this selection."""
+        last = self.settings.get("last_used.action", "")
+        if any(a.id == last for a in self.actions):
+            return last
+        return self.actions[0].id if self.actions else ""
+
+    # -------------------------------------------------------------- output
+    def _on_out_change(self) -> None:
+        mode = self.out_var.get()
+        if mode == "custom" and not self.settings.get("output.custom_path"):
+            chosen = filedialog.askdirectory(
+                title="Choose the output folder", parent=self.root)
+            if chosen:
+                self.settings.set("output.custom_path", chosen)
+                try:
+                    self.settings.save()     # keep the folder for next time
+                except Exception as exc:  # noqa: BLE001
+                    log_exception("could not remember the output folder", exc)
+            else:
+                self.out_var.set(self._last_out_mode)   # keep the old choice
+                self.root.bell()
+                return
+        self._last_out_mode = mode
+        self.settings.set("output.folder_mode", mode)
+        self._refresh_out_preview()
+
+    def _refresh_out_preview(self) -> None:
+        """Show where the output would land, before anything is written."""
+        files = self._run_files() or self.files
+        if not files:
+            self.out_preview.config(text="")
+            return
+        if (self.out_var.get() == "custom"
+                and not self.settings.get("output.custom_path")):
+            self.out_preview.config(text="Output folder: not chosen yet",
+                                    foreground="#a05a00")
+            return
+        try:
+            dest = output_dir_for(self.settings, files, self.out_var.get())
+        except Exception as exc:  # noqa: BLE001 - preview must never raise
+            text = " ".join(str(exc).split())
+            self.out_preview.config(
+                text=f"Output folder: {text[:110]}"
+                     f"{'…' if len(text) > 110 else ''}",
+                foreground="#a05a00")
+            return
+        parents = {str(Path(f).parent) for f in files}
+        note = ("  (only the first file's folder counts)"
+                if len(parents) > 1 else "")
+        self.out_preview.config(text=f"Output → {dest}{note}",
+                                foreground="#555")
+
+    # --------------------------------------------------------------- busy
+    def _set_busy(self, busy: bool) -> None:
+        """Freeze everything that must not change while the run is on."""
+        state = ["disabled"] if busy else ["!disabled"]
+        self.convert_btn.state(state)
+        self.cancel_btn.state(["!disabled"] if busy else ["disabled"])
+        widgets = list(self._action_buttons) + list(self._out_buttons)
+        widgets.extend(self._descendants(self.opts_frame))
+        for widget in widgets:
+            try:
+                widget.state(state)
+            except tk.TclError:
+                continue    # plain tk widgets have no state
+
+    @staticmethod
+    def _descendants(widget) -> list:
+        out = []
+        for child in widget.winfo_children():
+            out.append(child)
+            out.extend(ConversionDialog._descendants(child))
+        return out
 
     # ------------------------------------------------------------- keyboard
     def _on_escape(self, _event=None) -> str:
@@ -159,16 +275,26 @@ class ConversionDialog:
         self._convert()
         return "break"
 
+    def _set_status(self, text: str, color: str) -> None:
+        """Status text trimmed to the two lines the box is sized for."""
+        text = " ".join(str(text).split())
+        if len(text) > 120:
+            text = text[:117].rstrip() + "…"
+        self.status.config(text=text, foreground=color)
+
     def _callback_error(self, _exc_type, exc_value, _tb) -> None:
         log_exception("dialog callback failed", exc_value)
         try:
-            self.status.config(text=friendly_message(exc_value),
-                               foreground="#a02222")
+            self._set_status(friendly_message(exc_value), "#a02222")
         except Exception:  # noqa: BLE001 - status may already be gone
             pass
 
     # ------------------------------------------------------------------ run
     def run(self) -> None:
+        # Tk's first map request can get swallowed (the window stays
+        # withdrawn); re-assert it once the loop is actually running. On a
+        # healthy desktop this is a no-op.
+        self.root.after(50, self.root.deiconify)
         self.root.mainloop()
         self._after_close()
 
@@ -226,14 +352,34 @@ class ConversionDialog:
                             ).pack(side="left", padx=4)
         preset_row = ttk.Frame(f); preset_row.pack(anchor="w", padx=(24, 0))
         ttk.Label(preset_row, text="Preset:").pack(side="left")
+        preset_names = [p for p in ("web", "email", "print", "thumbnail")
+                        if p in presets] or sorted(presets)
         preset_var = tk.StringVar(
             value=last_any.get("last_used.resize.preset",
                                self.settings.get("resize.default_preset", "web")))
+        # a remembered preset that has since been removed from the settings
+        # would only fail at convert time: fall back to one that exists.
+        if preset_names and preset_var.get() not in preset_names:
+            preset_var.set(preset_names[0])
         preset_cb = ttk.Combobox(
             preset_row, textvariable=preset_var, state="readonly", width=12,
-            values=[p for p in ("web", "email", "print", "thumbnail") if p in presets],
+            values=preset_names,
         )
         preset_cb.pack(side="left", padx=4)
+        preset_hint = ttk.Label(preset_row, text="", foreground="#777")
+        preset_hint.pack(side="left", padx=4)
+
+        def _preset_hint(*_):
+            spec = presets.get(preset_var.get())
+            if spec is None:
+                preset_hint.config(text="")
+            elif isinstance(spec, int):
+                preset_hint.config(text=f"({spec} px long edge)")
+            else:
+                preset_hint.config(text=f"({spec})")
+
+        preset_var.trace_add("write", _preset_hint)
+        _preset_hint()
         self._remember("preset", preset_var, "get")
         pct_row = ttk.Frame(f); pct_row.pack(anchor="w", padx=(24, 0))
         ttk.Label(pct_row, text="Scale to %:").pack(side="left")
@@ -455,7 +601,11 @@ class ConversionDialog:
                 opts["height"] = int(h) if h.isdigit() else None
                 opts["keep_aspect"] = opts["height"] is None
             else:
-                opts["preset"] = opts.get("preset") or "web"
+                preset = opts.get("preset") or "web"
+                known = self.settings.get("presets", {})
+                if known and preset not in known:
+                    preset = next(iter(known))
+                opts["preset"] = preset
         elif action == "compress":
             opts["quality"] = int(_to_float(opts.get("quality"), 85))
             opts["auto"] = bool(opts.get("auto"))
@@ -512,18 +662,19 @@ class ConversionDialog:
         opts = self._collect_opts()
         try:
             self.settings.set("output.folder_mode", self.out_var.get())
+            self.settings.set("last_used.action", action)
             self.settings.remember_last(action, opts)
             self.settings.save()
         except Exception as exc:  # noqa: BLE001 - never block a conversion
             log_exception("could not remember these settings", exc)
 
-        self.convert_btn.state(["disabled"])
+        self._set_busy(True)
         self._cancel_event.clear()
-        self.cancel_btn.state(["!disabled"])
         self._run_total = len(to_run)
         self._bar = (self._run_total, 0)
         self.progress.config(mode="determinate", value=0,
                              maximum=max(self._run_total, 1))
+        self.pct_label.config(text="")
         self.status.config(text="Working…", foreground="#555")
         self.state = {"running": True, "done": False,
                       "progress": (0, self._run_total, ""), "results": None,
@@ -565,7 +716,10 @@ class ConversionDialog:
             # bar backwards.
             self._bar = (max(total, 1), min(done, total))
         if self._bar:
-            self.progress.config(maximum=self._bar[0], value=self._bar[1])
+            maximum, value = self._bar
+            self.progress.config(maximum=maximum, value=value)
+            self.pct_label.config(
+                text=f"{round(value * 100 / maximum)}%" if maximum else "")
         if name:
             if total == run_total:
                 self.status.config(
@@ -578,20 +732,18 @@ class ConversionDialog:
         self.root.after(80, self._poll)
 
     def _finish(self) -> None:
-        self.convert_btn.state(["!disabled"])
-        self.cancel_btn.state(["disabled"])
+        self._set_busy(False)
         error = self.state["error"]
         results = self.state["results"]
         if error:
-            self.status.config(text=error, foreground="#a02222")
+            self._set_status(error, "#a02222")
             return
         if results is None:
             # worker died without results and without an error we could show
             get_logger().error("conversion ended without results")
-            self.status.config(
-                text=f"The conversion stopped unexpectedly. "
-                     f"Details: {LOG_FILE}",
-                foreground="#a02222",
+            self._set_status(
+                f"The conversion stopped unexpectedly. Details: {LOG_FILE}",
+                "#a02222",
             )
             return
         self.results = results
@@ -604,7 +756,6 @@ class ConversionDialog:
     def _show_results(self, results: list) -> None:
         win = tk.Toplevel(self.root)
         win.title("Conversion results")
-        win.transient(self.root)
         win.resizable(False, False)
         failed = [r for r in results if not r.ok
                   and not r.error.startswith("Cancelled")]
@@ -640,6 +791,15 @@ class ConversionDialog:
         vsb.pack(side="right", fill="y")
         body.pack(side="left", fill="both", expand=True)
 
+        def copy_all() -> None:
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(body.get("1.0", "end-1c"))
+                self.status.config(text="Results copied to the clipboard.",
+                                   foreground="#555")
+            except tk.TclError:
+                pass
+
         if failed:
             ttk.Label(
                 win, foreground="#555", wraplength=430, justify="left",
@@ -659,9 +819,26 @@ class ConversionDialog:
         if failed:
             ttk.Button(row, text="Open log", command=self._open_log).pack(
                 side="left")
-        ttk.Button(row, text="OK", command=win.destroy).pack(side="right")
+        ttk.Button(row, text="Copy all", command=copy_all).pack(
+            side="left", padx=(8, 0))
+        ok_btn = ttk.Button(row, text="OK", command=win.destroy)
+        ok_btn.pack(side="right")
+
+        # Centre it over the dialog, then realize it and only afterwards
+        # attach it to its owner: a toplevel made transient before it exists
+        # is never shown - it lingers as a ghost window with no content.
+        win.update_idletasks()
+        x = self.root.winfo_x() + max(
+            0, (self.root.winfo_width() - win.winfo_reqwidth()) // 2)
+        y = self.root.winfo_y() + max(
+            0, (self.root.winfo_height() - win.winfo_reqheight()) // 2)
+        win.geometry(f"+{x}+{y}")
+        win.transient(self.root)
+        win.deiconify()
+        win.lift()
         win.attributes("-topmost", True)
         win.after(200, lambda: win.attributes("-topmost", False))
+        win.after(50, ok_btn.focus_set)
 
     def _open_log(self) -> None:
         from platform_util.openfolder import open_file

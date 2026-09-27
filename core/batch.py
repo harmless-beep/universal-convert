@@ -50,25 +50,32 @@ class Result:
         return self.error
 
 
-def resolve_output_dir(settings: Settings, inputs: list[str]) -> Path:
-    """Where outputs go, per settings:
+def output_dir_for(settings: Settings, inputs: list[str],
+                   mode: str | None = None) -> Path:
+    """Where outputs would go, per settings (nothing is created):
       subfolder -> <folder of first input>/<subfolder_name>
       same      -> folder of first input
       custom    -> the configured absolute path
+
+    `mode` overrides what is stored, so a preview can follow the radio
+    buttons before they have been saved.
     """
-    mode = settings.get("output.folder_mode", "subfolder")
+    mode = mode or settings.get("output.folder_mode", "subfolder")
     first = Path(inputs[0]).expanduser()
     if mode == "same":
-        base = first.parent
-    elif mode == "custom":
+        return first.parent
+    if mode == "custom":
         custom = settings.get("output.custom_path")
-        base = Path(custom).expanduser() if custom else first.parent
-        if custom is None:
-            base = first.parent
-    else:  # subfolder (default)
-        name = settings.get("output.subfolder_name", "Converted") or "Converted"
-        base = first.parent / name
+        if custom:
+            return Path(custom).expanduser()
+        return first.parent
+    name = settings.get("output.subfolder_name", "Converted") or "Converted"
+    return first.parent / name
 
+
+def resolve_output_dir(settings: Settings, inputs: list[str]) -> Path:
+    """output_dir_for() + make sure the folder exists."""
+    base = output_dir_for(settings, inputs)
     try:
         base.mkdir(parents=True, exist_ok=True)
     except OSError as exc:

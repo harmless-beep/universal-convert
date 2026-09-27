@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from core import detect  # noqa: E402
-from core.batch import summarize  # noqa: E402
+from core.batch import output_dir_for, summarize  # noqa: E402
 from core.runner import run_action  # noqa: E402
 from core.settings import load_settings  # noqa: E402
 
@@ -447,6 +447,19 @@ def test_robustness(fx):
     results = run_action("resize", [fx["photo_a"]], dict(resize), s)
     check("cancel state cleared for the next run", results[0].ok,
           str([r.error for r in results]))
+
+    # the dialog previews the output folder before converting
+    s2 = load_settings()
+    s2.set("output.folder_mode", "subfolder")
+    s2.set("output.subfolder_name", "PreviewProbe")
+    got = output_dir_for(s2, [fx["photo_a"]])
+    check("output preview points at the real folder",
+          got == Path(fx["photo_a"]).parent / "PreviewProbe", str(got))
+    check("output preview creates nothing", not got.exists(), str(got))
+    check("output preview follows the live mode",
+          output_dir_for(s2, [fx["photo_a"]], "same")
+          == Path(fx["photo_a"]).parent,
+          str(output_dir_for(s2, [fx["photo_a"]], "same")))
 
 
 def test_aggregation():

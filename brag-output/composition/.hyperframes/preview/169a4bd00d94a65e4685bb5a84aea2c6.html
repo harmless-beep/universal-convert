@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><script data-hf-gsap-fallback>
+(function(){
+  var cdnBase="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/";
+  var loaded={};
+  function loadFallback(file){
+    if(loaded[file])return loaded[file];
+    return loaded[file]=new Promise(function(ok,fail){
+      var s=document.createElement("script");
+      s.src=cdnBase+file;s.onload=ok;s.onerror=fail;
+      document.head.appendChild(s);
+    });
+  }
+  document.addEventListener("error",function(e){
+    var t=e.target;
+    if(!t||t.tagName!=="SCRIPT"||!t.src)return;
+    var m=t.src.match(/gsap[^/]*\/dist\/(.+\.js)/);
+    if(m)loadFallback(m[1]);
+  },true);
+})();
+</script><base href="/api/projects/composition/preview/"><style data-hyperframes-text-rendering="true">html,body,*{text-rendering:geometricPrecision}</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>Universal Convert — Brag</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+    <style>
+      @font-face {
+        font-family: 'Inter';
+        src: url('https://fonts.gstatic.com/s/inter/v19/UcCO3FwrzUu6-I8m95mc7QwIoKhn4c.woff2') format('woff2');
+        font-weight: 300; font-style: normal; font-display: swap;
+      }
+      body {
+        margin: 0; padding: 0;
+        background: #0f0f12;
+        color: #e8e8e8;
+        font-family: 'Inter', system-ui, sans-serif;
+        overflow: hidden;
+      }
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      .clip {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 80px;
+        box-sizing: border-box;
+      }
+      /* Background layers */
+      .bg-gradient {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(ellipse at 50% 40%, #1a7a2e08 0%, transparent 60%);
+      }
+      .bg-dot-grid {
+        position: absolute;
+        inset: 0;
+        background-image: radial-gradient(#3a3a42 1px, transparent 1px);
+        background-size: 40px 40px;
+        opacity: 0.15;
+      }
+      /* Ambient motion */
+      #ambient-glow {
+        position: absolute;
+        top: 50%; left: 50%;
+        width: 600px; height: 600px;
+        background: radial-gradient(circle, #1a7a2e20 0%, transparent 70%);
+        transform: translate(-50%, -50%);
+        filter: blur(40px);
+      }
+      /* Typography */
+      h1 { margin: 0; font-weight: 900; font-size: 112px; letter-spacing: -0.02em; }
+      h2 { margin: 0; font-weight: 700; font-size: 56px; letter-spacing: -0.01em; }
+      h3 { margin: 0; font-weight: 600; font-size: 28px; }
+      .display-xl { font-size: 112px; font-weight: 900; letter-spacing: -0.02em; }
+      .display-lg { font-size: 56px; font-weight: 700; letter-spacing: -0.01em; }
+      .headline { font-size: 36px; font-weight: 600; }
+      .body { font-size: 18px; font-weight: 300; color: #a0a0a8; line-height: 1.5; }
+      .accent-text { color: #1a7a2e; }
+      .warning-text { color: #a05a00; }
+      .ok-text { color: #1a7a2e; font-weight: 600; }
+
+      /* Scene 1: Context menu */
+      #menu {
+        position: absolute;
+        left: 420px; top: 380px;
+        width: 260px;
+        background: #1a1a1f;
+        border: 1px solid #3a3a42;
+        border-radius: 6px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+        padding: 6px 0;
+      }
+      #menu .menu-item {
+        padding: 8px 28px 8px 16px;
+        font-size: 13px;
+        font-weight: 400;
+        color: #c8c8d0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      #menu .menu-item:hover {
+        background: #2a2a32;
+        color: #e8e8e8;
+      }
+      #menu .menu-item.accent {
+        color: #67e480;
+        font-weight: 600;
+      }
+      #menu .menu-item.accent:hover {
+        background: #1a7a2e20;
+        color: #67e480;
+        box-shadow: inset 3px 0 0 #67e480;
+      }
+      #menu .menu-separator {
+        height: 1px;
+        background: #3a3a42;
+        margin: 6px 0;
+      }
+      .cursor {
+        position: absolute;
+        width: 20px; height: 20px;
+        border: 2px solid #a0a0a8;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        opacity: 0.7;
+      }
+      .cursor-glow {
+        position: absolute;
+        width: 28px; height: 28px;
+        border: 1px solid #1a7a2e;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        filter: blur(2px);
+        opacity: 0;
+      }
+
+      /* Scene 2: Dialog */
+      .dialog {
+        background: #1a1a1f;
+        border: 1px solid #3a3a42;
+        border-radius: 10px;
+        box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+        width: 800px;
+        max-width: 90vw;
+        overflow: hidden;
+      }
+      .dialog-header {
+        padding: 16px 24px;
+        background: #222228;
+        border-bottom: 1px solid #3a3a42;
+      }
+      .dialog-header .title { font-size: 15px; font-weight: 600; color: #e8e8e8; }
+      .dialog-header .sub { font-size: 12px; color: #aaa; margin-top: 4px; }
+      .dialog-body {
+        padding: 18px 24px;
+      }
+      .dialog-body .label { font-size: 13px; font-weight: 600; color: #c8c8d0; margin-bottom: 10px; }
+      .radio-group { display: flex; gap: 20px; margin-bottom: 16px; }
+      .radio-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        color: #a0a0a8;
+        border: 1px solid transparent;
+      }
+      .radio-option.active {
+        background: #2a2a32;
+        border-color: #1a7a2e;
+        color: #e8e8e8;
+      }
+      .radio-option .indicator {
+        width: 12px; height: 12px;
+        border: 1px solid #555;
+        border-radius: 50%;
+      }
+      .radio-option.active .indicator {
+        width: 12px; height: 12px;
+        border: 4px solid #1a7a2e;
+        border-radius: 50%;
+      }
+      .output-line { font-size: 12px; color: #aaa; margin-top: 8px; }
+      .output-line strong { color: #aaa; }
+      .dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 14px 24px;
+        border-top: 1px solid #3a3a42;
+        background: #222228;
+      }
+      .dialog-actions button {
+        padding: 6px 18px;
+        border: 1px solid #3a3a42;
+        border-radius: 6px;
+        background: #2a2a32;
+        color: #c8c8d0;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      .dialog-actions button.convert {
+        background: #1a7a2e;
+        border-color: #1a7a2e;
+        color: #fff;
+      }
+      .dialog-actions button:active { opacity: 0.8; }
+
+      /* Scene 3: Progress */
+      .progress-container {
+        width: 700px;
+        max-width: 80vw;
+      }
+      .progress-bar-bg {
+        width: 100%;
+        height: 10px;
+        background: #2a2a32;
+        border-radius: 5px;
+        overflow: hidden;
+        margin-bottom: 12px;
+      }
+      .progress-bar-fill {
+        width: 0%;
+        height: 100%;
+        background: #1a7a2e;
+        border-radius: 5px;
+        transition: width 0.3s;
+      }
+      .progress-pct { font-size: 18px; font-weight: 700; color: #67e480; }
+      .progress-status { font-size: 13px; color: #a0a0a8; }
+
+      /* Scene 4: Results */
+      .results-window {
+        background: #1a1a1f;
+        border: 1px solid #3a3a42;
+        border-radius: 10px;
+        width: 700px;
+        max-width: 80vw;
+        overflow: hidden;
+        box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+      }
+      .results-window .results-header {
+        padding: 14px 20px;
+        background: #222228;
+        border-bottom: 1px solid #3a3a42;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .results-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 20px;
+        font-size: 13px;
+        border-bottom: 1px solid #222228;
+      }
+      .results-row:last-child { border-bottom: none; }
+      .results-row .mark { color: #67e480; font-weight: 700; }
+      .results-row .name { color: #c8c8d0; }
+      .results-row .output { color: #b0b0b8; margin-left: auto; }
+      .results-row.bad .mark { color: #a02222; }
+      .results-row.bad .name { color: #a05a00; }
+      .results-footer {
+        padding: 12px 20px;
+        border-top: 1px solid #3a3a42;
+        background: #222228;
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+      }
+      .results-footer button {
+        padding: 5px 14px;
+        border: 1px solid #3a3a42;
+        border-radius: 5px;
+        background: #2a2a32;
+        color: #c8c8d0;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+
+      /* Scene 5: Logo */
+      .logo-name {
+        font-size: 72px;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+        color: #e8e8e8;
+      }
+      .tagline {
+        font-size: 22px;
+        font-weight: 400;
+        color: #a0a0a8;
+        margin-top: 12px;
+      }
+      .tagline .underline {
+        position: relative;
+      }
+      .tagline .underline::after {
+        content: '';
+        position: absolute;
+        bottom: -3px;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: #1a7a2e;
+      }
+    </style>
+  <script data-hyperframes-preview-runtime="1" src="/api/runtime.js"></script>
+<meta name="hyperframes-project-signature" content="f7684d5b8081b24a264cdae4">
+</head>
+  <body>
+    <div data-hf-id="hf-dcwt" id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="18">
+      <!-- Ambient background layers -->
+      <div data-hf-id="hf-jqtr" id="ambient-glow"></div>
+      <div data-hf-id="hf-8jbw" class="bg-dot-grid"></div>
+      <div data-hf-id="hf-zb1e" class="bg-gradient"></div>
+
+      <!-- Audio -->
+      <audio data-hf-id="hf-of0m" id="bgm" src="assets/music/happy-beats-business-moves-vol-11-by-ende-dot-app.mp3" data-start="0" data-duration="18" data-track-index="10" data-volume="1" data-end="18"></audio>
+
+      <!-- Scene 1: Right-click hook (0s - 2.5s) -->
+      <section data-hf-id="hf-k8oe" id="scene1" class="clip" data-start="0" data-duration="2.5">
+        <div data-hf-id="hf-cjvc" id="menu">
+          <div data-hf-id="hf-xksr" class="menu-item">Open</div>
+          <div data-hf-id="hf-gajn" class="menu-separator"></div>
+          <div data-hf-id="hf-whbx" class="menu-item">Cut</div>
+          <div data-hf-id="hf-9jbq" class="menu-item">Copy</div>
+          <div data-hf-id="hf-0wp6" class="menu-item">Paste</div>
+          <div data-hf-id="hf-8t43" class="menu-separator"></div>
+          <div data-hf-id="hf-9wc4" class="menu-item accent">Convert With…</div>
+          <div data-hf-id="hf-dwim" class="menu-item">Properties</div>
+        </div>
+        <div data-hf-id="hf-c0g2" id="cursor" class="cursor"></div>
+        <div data-hf-id="hf-9fs2" id="cursor-glow" class="cursor-glow"></div>
+        <div data-hf-id="hf-dp8n" id="hook-word" class="display-xl" style="margin-top: 200px;">
+          Convert.
+        </div>
+      </section>
+
+      <!-- Scene 2: Dialog opens (2.5s - 6.5s) -->
+      <section data-hf-id="hf-053b" id="scene2" class="clip" data-start="2.5" data-duration="4">
+        <div data-hf-id="hf-behm" id="dialog" class="dialog" style="transform: scale(0.95);">
+          <div data-hf-id="hf-1eka" class="dialog-header">
+            <div data-hf-id="hf-zvku" class="title">40 files selected</div>
+            <div data-hf-id="hf-6or0" class="sub">PNG · 40 · · 3 paths shown</div>
+          </div>
+          <div data-hf-id="hf-f7c5" class="dialog-body">
+            <div data-hf-id="hf-rivi" class="label">What should happen?</div>
+            <div data-hf-id="hf-74g7" class="radio-group">
+              <div data-hf-id="hf-ezbd" class="radio-option active" id="radio-resize">
+                <div data-hf-id="hf-sc6j" class="indicator"></div>
+                <span data-hf-id="hf-umkd">Resize</span>
+              </div>
+              <div data-hf-id="hf-wqps" class="radio-option">Convert</div>
+              <div data-hf-id="hf-049x" class="radio-option">Compress</div>
+            </div>
+            <div data-hf-id="hf-ypnj" class="output-line"><strong data-hf-id="hf-jyqx">Output →</strong> /Converted</div>
+          </div>
+          <div data-hf-id="hf-iy7y" class="dialog-actions">
+            <button data-hf-id="hf-pvpr">Cancel</button>
+            <button data-hf-id="hf-2drx" class="convert">Convert</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scene 3: Progress in motion (6.5s - 11.5s) -->
+      <section data-hf-id="hf-akb1" id="scene3" class="clip" data-start="6.5" data-duration="5">
+        <div data-hf-id="hf-dj65" id="progress-ui" class="progress-container" style="opacity: 0;">
+          <div data-hf-id="hf-pypg" class="progress-bar-bg" id="progress-bar-bg">
+            <div data-hf-id="hf-1fcm" id="progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+          <div data-hf-id="hf-0izb" style="display: flex; justify-content: space-between; margin-top: 10px;">
+            <span data-hf-id="hf-ehe3" id="progress-status" class="progress-status">Starting…</span>
+            <span data-hf-id="hf-pp9k" id="progress-pct" class="progress-pct">0%</span>
+          </div>
+          <button data-hf-id="hf-e2w9" id="cancel-btn" style="margin-top: 14px; padding: 5px 14px; border: 1px solid #3a3a42; border-radius: 5px; background: #2a2a32; color: #c8c8d0; font-size: 12px; cursor: pointer;">Cancel</button>
+        </div>
+      </section>
+
+      <!-- Scene 4: Results list (11.5s - 15.5s) -->
+      <section data-hf-id="hf-ajop" id="scene4" class="clip" data-start="11.5" data-duration="4">
+        <div data-hf-id="hf-a1r8" id="results-win" class="results-window">
+          <div data-hf-id="hf-j5zc" class="results-header">40 files processed — 40 succeeded</div>
+          <div data-hf-id="hf-bta9" id="results-rows" style="max-height: 280px; overflow: hidden;">
+            <div data-hf-id="hf-9y7h" class="results-row"><span data-hf-id="hf-1gjz" class="mark">✓</span> <span data-hf-id="hf-ebnz" class="name">shot_01.png</span><span data-hf-id="hf-101z" class="output">→ shot_01.jpg</span></div>
+            <div data-hf-id="hf-x3c1" class="results-row"><span data-hf-id="hf-1flb" class="mark">✓</span> <span data-hf-id="hf-110i" class="name">shot_02.png</span><span data-hf-id="hf-i266" class="output">→ shot_02.jpg</span></div>
+            <div data-hf-id="hf-ya94" class="results-row"><span data-hf-id="hf-11aa" class="mark">✓</span> <span data-hf-id="hf-giz9" class="name">shot_03.png</span><span data-hf-id="hf-7dvx" class="output">→ shot_03.jpg</span></div>
+            <div data-hf-id="hf-xvy3" class="results-row"><span data-hf-id="hf-0mz9" class="mark">✓</span> <span data-hf-id="hf-s6kw" class="name">shot_04.png</span><span data-hf-id="hf-mpb8" class="output">→ shot_04.jpg</span></div>
+            <div data-hf-id="hf-vwey" class="results-row"><span data-hf-id="hf-3f4g" class="mark">✓</span> <span data-hf-id="hf-yj43" class="name">shot_05.png</span><span data-hf-id="hf-ijxv" class="output">→ shot_05.jpg</span></div>
+            <div data-hf-id="hf-vi3x" class="results-row"><span data-hf-id="hf-30tf" class="mark">✓</span> <span data-hf-id="hf-zbfp" class="name">shot_10.png</span><span data-hf-id="hf-xisd" class="output">→ shot_10.jpg</span></div>
+            <div data-hf-id="hf-wp10" class="results-row"><span data-hf-id="hf-2mie" class="mark">✓</span> <span data-hf-id="hf-gpx0" class="name">shot_22.png</span><span data-hf-id="hf-36mo" class="output">→ shot_22.jpg</span></div>
+            <div data-hf-id="hf-wapz" class="results-row"><span data-hf-id="hf-287d" class="mark">✓</span> <span data-hf-id="hf-lhuw" class="name">shot_40.png</span><span data-hf-id="hf-cp98" class="output">→ shot_40.jpg</span></div>
+          </div>
+          <div data-hf-id="hf-irv6" class="results-footer">
+            <button data-hf-id="hf-geiv">Open log</button>
+            <button data-hf-id="hf-44q3">Copy all</button>
+            <button data-hf-id="hf-5f07" style="background: #1a7a2e; border-color: #1a7a2e; color: #fff;">OK</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scene 5: Logo + tagline (15.5s - 18s) -->
+      <section data-hf-id="hf-eoft" id="scene5" class="clip" data-start="15.5" data-duration="2.5">
+        <div data-hf-id="hf-d6ij" id="logo-container" style="text-align: center; opacity: 0;">
+          <div data-hf-id="hf-08fj" class="logo-name">Universal<br data-hf-id="hf-x5px">Convert</div>
+          <div data-hf-id="hf-eu8u" class="tagline">
+            <span data-hf-id="hf-i8tt" class="underline">Right-click. Convert. Done.</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- SFX — Hyperframes selects exact files after visual animation is set -->
+    <audio data-hf-id="hf-7tw4" id="sfx-card" src="assets/sfx/ui/click1.ogg" data-start="0" data-volume="0.4"></audio>
+    <audio data-hf-id="hf-azny" id="sfx-announce" src="assets/sfx/impact/impactGeneric_light_000.ogg" data-start="0" data-volume="0.5"></audio>
+
+    
+  <script>window.addEventListener("load", () => {
+  const root = document.getElementById("root");
+  const compId = root.getAttribute("data-composition-id");
+  const tl = gsap.timeline({ paused: true });
+  tl.time(0);
+  tl.from("#menu", {
+    y: 20,
+    opacity: 0,
+    duration: 0.4,
+    ease: "power3.out"
+  }, 0);
+  tl.to("#cursor", {
+    x: 548,
+    y: 498,
+    duration: 0.5,
+    ease: "power2.inOut"
+  }, 0.3);
+  tl.to("#cursor-glow", {
+    x: 548,
+    y: 498,
+    opacity: 0.6,
+    duration: 0.3
+  }, 0.3);
+  tl.from("#menu .menu-item.accent", {
+    backgroundColor: "#1a7a2e20",
+    boxShadow: "inset 3px 0 0 #1a7a2e",
+    duration: 0.3
+  }, 0.8);
+  tl.from("#hook-word", {
+    opacity: 0,
+    y: 40,
+    duration: 0.5,
+    ease: "power2.out"
+  }, 1);
+  tl.from("#dialog", {
+    opacity: 0,
+    scale: 0.95,
+    duration: 0.5,
+    ease: "power3.out"
+  }, 2.5);
+  tl.from(".dialog-header .title", {
+    y: 12,
+    opacity: 0,
+    duration: 0.3,
+    ease: "power2.out"
+  }, 2.8);
+  tl.from(".dialog-header .sub", {
+    y: 12,
+    opacity: 0,
+    duration: 0.3,
+    ease: "power2.out"
+  }, 3);
+  tl.from(".radio-option", {
+    x: -16,
+    opacity: 0,
+    duration: 0.3,
+    ease: "power2.out",
+    stagger: 0.08
+  }, 3.2);
+  tl.to(".radio-option.active .indicator", {
+    borderWidth: "4px",
+    duration: 0.2
+  }, 3.6);
+  tl.from(".output-line", {
+    y: 8,
+    opacity: 0,
+    duration: 0.3,
+    ease: "power2.out"
+  }, 3.7);
+  tl.from(".dialog-actions button", {
+    y: 8,
+    opacity: 0,
+    duration: 0.3,
+    ease: "power2.out",
+    stagger: 0.05
+  }, 3.9);
+  tl.to("#progress-ui", {
+    opacity: 1,
+    y: 0,
+    duration: 0.4,
+    ease: "power2.out"
+  }, 6.5);
+  tl.to("#progress-fill", {
+    width: "100%",
+    duration: 4.2,
+    ease: "power1.inOut"
+  }, 7);
+  const pctTargets = [
+    { t: 7.3, v: "23%", name: "Converting shot_09.png\u2026 (9/40)" },
+    { t: 7.9, v: "46%", name: "Converting shot_18.png\u2026 (18/40)" },
+    { t: 8.5, v: "71%", name: "Converting shot_28.png\u2026 (28/40)" },
+    { t: 9.2, v: "94%", name: "Converting shot_38.png\u2026 (38/40)" },
+    { t: 9.9, v: "100%", name: "All 40 files processed" }
+  ];
+  pctTargets.forEach((pt) => {
+    tl.add(() => {
+      document.getElementById("progress-status").textContent = pt.name;
+      document.getElementById("progress-pct").textContent = pt.v;
+    }, pt.t);
+  });
+  tl.fromTo("#progress-bar-bg", {
+    boxShadow: "none"
+  }, {
+    boxShadow: "0 0 0 3px rgba(26,122,46,0.4)",
+    duration: 0.3
+  }, 10.8);
+  tl.from("#results-win", {
+    opacity: 0,
+    y: 30,
+    duration: 0.5,
+    ease: "power3.out"
+  }, 11.5);
+  tl.from(".results-header", {
+    y: 12,
+    opacity: 0,
+    duration: 0.3,
+    ease: "power2.out"
+  }, 11.8);
+  const rowCount = 8;
+  tl.from(".results-row", {
+    x: -16,
+    opacity: 0,
+    duration: 0.25,
+    ease: "power2.out",
+    stagger: 0.08
+  }, 12);
+  tl.from(".results-footer button", {
+    y: 8,
+    opacity: 0,
+    duration: 0.3,
+    ease: "power2.out",
+    stagger: 0.05
+  }, 13.8);
+  tl.to("#logo-container", {
+    opacity: 1,
+    duration: 0.6,
+    ease: "power2.out"
+  }, 15.5);
+  tl.from(".logo-name", {
+    y: 32,
+    opacity: 0,
+    duration: 0.5,
+    ease: "power2.out"
+  }, 16);
+  tl.from(".tagline", {
+    y: 16,
+    opacity: 0,
+    duration: 0.5,
+    ease: "power2.out"
+  }, 16.3);
+  const glowTl = gsap.fromTo("#ambient-glow", {
+    scale: 1
+  }, {
+    scale: 1.12,
+    duration: 4,
+    ease: "sine.inOut",
+    repeat: 4,
+    yoyo: true
+  });
+  tl.add(() => glowTl.play(), 0);
+  tl.from("#bgm", {
+    volume: 0.3,
+    duration: 0.6,
+    ease: "power2.out"
+  }, 0);
+  tl.to("#bgm", {
+    volume: 0.15,
+    duration: 1,
+    ease: "power2.inOut"
+  }, 16.5);
+  window.__timelines[compId] = tl;
+});</script></body>
+</html>

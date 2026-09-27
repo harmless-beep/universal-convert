@@ -17,7 +17,7 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
-from .batch import OutputNamer, Result, run_batch
+from .batch import CANCELLED, OutputNamer, Result, cancelled, run_batch
 from .errors import UserError, get_logger
 
 Progress = Callable[[int, int, str], None] | None
@@ -92,6 +92,10 @@ def do_pdf_to_images(
         )
 
     for path in paths:
+        if cancelled():
+            results.append(Result(input=path, output=None, ok=False,
+                                  error=CANCELLED))
+            continue
         try:
             doc = _open_pdf(path)
             stem = Path(path).stem
@@ -160,6 +164,10 @@ def _pdf_to_images_libreoffice(
                     for p in paths]
         made_map = {p.name.lower(): p for p in produced}
         for path in paths:
+            if cancelled():
+                results.append(Result(input=path, output=None, ok=False,
+                                      error=CANCELLED))
+                continue
             src = made_map.get((Path(path).stem + "." + fmt).lower())
             if src and src.is_file():
                 unique = namer.unique(
@@ -268,6 +276,10 @@ def do_pdf_split(
     results: list[Result] = []
 
     for path in paths:
+        if cancelled():
+            results.append(Result(input=path, output=None, ok=False,
+                                  error=CANCELLED))
+            continue
         try:
             reader = pypdf.PdfReader(path)
             if reader.is_encrypted:
@@ -414,6 +426,10 @@ def do_pdf_to_docx(
 
     results: list[Result] = []
     for i, path in enumerate(paths):
+        if cancelled():
+            results.append(Result(input=path, output=None, ok=False,
+                                  error=CANCELLED))
+            continue
         out = namer.for_input(path, ".docx", "")
         note = ""
         converted = False

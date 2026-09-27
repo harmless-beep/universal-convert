@@ -17,7 +17,7 @@ from typing import Callable
 from PIL import Image, ImageOps, UnidentifiedImageError
 from PIL.Image import Image as ImageT
 
-from .batch import OutputNamer, Result, run_batch
+from .batch import CANCELLED, OutputNamer, Result, cancelled, run_batch
 from .errors import UserError
 
 Progress = Callable[[int, int, str], None] | None
@@ -363,10 +363,18 @@ def _images_to_pdf(
     combined = bool(opts.get("combined", True)) and len(paths) > 1
     results: list[Result] = []
 
+    if cancelled():
+        return [Result(input=p, output=None, ok=False, error=CANCELLED)
+                for p in paths]
+
     if combined:
         try:
             pages: list[ImageT] = []
             for i, p in enumerate(paths):
+                if cancelled():
+                    # nothing is written until the end, so nothing to undo
+                    return [Result(input=q, output=None, ok=False,
+                                   error=CANCELLED) for q in paths]
                 img = _open(p)
                 pages.append(_flatten_alpha(img).convert("RGB"))
                 if progress:

@@ -1,10 +1,13 @@
 """Success notifications, per OS - no extra pip packages.
 
   Windows: PowerShell toast (Windows.UI.Notifications), works per-user
-           without admin; silently returns False on failure so the caller
-           can fall back to a Tk messagebox.
+           without admin.
   macOS:   osascript "display notification"
   Linux:   notify-send (if installed)
+
+Everything is spawned fire-and-forget: a notification never delays the
+caller, and never blocks the app from exiting. Returns False only when
+there is no notification mechanism to talk to.
 """
 
 from __future__ import annotations
@@ -57,28 +60,37 @@ def notify(title: str, body: str) -> bool:
 
 
 def _run(cmd: list[str]) -> bool:
-    proc = subprocess.run(
-        cmd, capture_output=True, text=True, timeout=15, check=False
-    )
-    if proc.returncode != 0:
-        get_logger().debug("notify rc=%s: %s", proc.returncode, proc.stderr)
+    """Fire and forget: a notification must never delay the app exiting."""
+    try:
+        _spawn(cmd)
+        return True
+    except OSError as exc:
+        get_logger().debug("notify failed to start: %s", exc)
         return False
-    return True
+
+
+def _spawn(cmd: list[str]) -> "subprocess.Popen[bytes]":
+    kwargs: dict = dict(stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if sys.platform == "win32":
+        kwargs["creationflags"] = (
+            getattr(subprocess, "DETACHED_PROCESS", 0)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+    return subprocess.Popen(cmd, **kwargs)
 
 
 def _toast(title: str, body: str) -> bool:
     if not shutil.which("powershell") and not shutil.which("powershell.exe"):
         return False
     script = PS_TOAST_TMPL.format(title=_ps_quote(title), body=_ps_quote(body))
-    proc = subprocess.run(
-        [
+    try:
+        # Not subprocess.run(): cold-starting PowerShell can take seconds and
+        # the caller is usually about to exit.
+        _spawn([
             "powershell", "-NoProfile", "-NonInteractive", "-WindowStyle",
             "Hidden", "-ExecutionPolicy", "Bypass", "-Command", script,
-        ],
-        capture_output=True, text=True, timeout=20, check=False,
-    )
-    if proc.returncode != 0:
-        get_logger().debug("toast failed rc=%s: %s",
-                           proc.returncode, (proc.stderr or "")[:500])
+        ])
+        return True
+    except OSError as exc:
+        get_logger().debug("toast failed to start: %s", exc)
         return False
-    return True

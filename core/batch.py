@@ -6,12 +6,32 @@ failures are collected per file and shown in the results view.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 from .errors import UserError, get_logger, log_exception
 from .settings import Settings
+
+# Cancellation for the run that is currently under way. Engines check this
+# between files (never mid-write), so stopping never leaves a half-written
+# output behind. One run per process - the dialog only ever runs one.
+_CANCEL: threading.Event | None = None
+
+
+def set_cancel(event: threading.Event | None) -> None:
+    """Install (or clear) the cancellation switch for a run about to start."""
+    global _CANCEL
+    _CANCEL = event
+
+
+def cancelled() -> bool:
+    """True once the user asked to stop."""
+    return _CANCEL is not None and _CANCEL.is_set()
+
+
+CANCELLED = "Cancelled - not processed"
 
 
 @dataclass
@@ -100,10 +120,19 @@ def run_batch(
     worker returns the output path (or None when the output location is
     managed elsewhere, e.g. merged PDF). Exceptions become friendly
     per-file failures; unknown exceptions are logged with traceback.
+
+    Stops between files (never mid-file) once cancelled(), returning the
+    results collected so far.
     """
     results: list[Result] = []
     log = get_logger()
-    for path in files:
+    for i, path in enumerate(files):
+        if cancelled():
+            for rest in files[i:]:
+                results.append(Result(input=rest, output=None, ok=False,
+                                      error=CANCELLED))
+            log.info("cancelled: %s file(s) not processed", len(files) - i)
+            break
         try:
             out = worker(path)
             results.append(Result(input=path, output=out, ok=True))
@@ -130,7 +159,14 @@ def first_output(results: list[Result]) -> str | None:
 
 def summarize(results: list[Result]) -> str:
     ok = sum(1 for r in results if r.ok)
-    failed = len(results) - ok
+    stopped = sum(1 for r in results if not r.ok
+                  and r.error.startswith("Cancelled"))
+    failed = len(results) - ok - stopped
     if failed == 0:
+        if stopped:
+            return (f"Stopped after {ok} of {len(results)} files "
+                    f"({stopped} not processed).")
         return f"All {ok} file{'s' if ok != 1 else ''} converted."
+    if stopped:
+        return f"{ok} succeeded, {failed} failed, {stopped} not processed."
     return f"{ok} succeeded, {failed} failed."

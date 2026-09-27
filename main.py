@@ -192,7 +192,17 @@ def run_cli(args: argparse.Namespace) -> int:
         print(f"Available: {', '.join(a.id for a in actions) or '(none)'}")
         return 2
 
-    results = run_action(args.action, files, cli_opts(args), settings)
+    supported = set(detect.categorize(files).supported)
+    skipped = [f for f in files if f not in supported]
+    run_files = [f for f in files if f in supported]
+    if skipped:
+        print(f"Skipping {len(skipped)} unsupported file(s): "
+              f"{describe_paths(skipped, 3)}")
+    if not run_files:
+        print("None of the selected files can be converted.")
+        return 2
+
+    results = run_action(args.action, run_files, cli_opts(args), settings)
     print(summarize(results))
     for r in results:
         status = "OK  " if r.ok else "FAIL"
@@ -201,6 +211,9 @@ def run_cli(args: argparse.Namespace) -> int:
             line += f" -> {r.output}"
         if r.note:
             line += f" ({r.note})"
+        if not r.ok and r.error:
+            # collapse the (often multi-line) friendly message into one row
+            line += f" -> {' '.join(r.error.split())}"
         print(line)
     return 0 if all(r.ok for r in results) else 1
 

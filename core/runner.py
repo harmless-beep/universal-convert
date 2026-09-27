@@ -6,11 +6,12 @@ frontend gets identical behavior (output folder rules, batch semantics).
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Callable
 
 from . import documents, images, pdf
-from .batch import OutputNamer, Result, resolve_output_dir
+from .batch import OutputNamer, Result, resolve_output_dir, set_cancel
 from .errors import UserError
 from .settings import Settings
 
@@ -40,17 +41,56 @@ def run_action(
     opts: dict,
     settings: Settings,
     progress: Progress = None,
+    cancel: threading.Event | None = None,
 ) -> list[Result]:
+    """Run one action over `paths`.
+
+    `cancel` is an optional threading.Event the caller can set to stop the
+    run between files; engines poll it via batch.cancelled().
+    """
     if not paths:
         raise UserError("No files selected.")
     fn = _DISPATCH.get(action_id)
     if fn is None:
         raise UserError(f"Unknown action: {action_id}")
-    missing = [p for p in paths if not Path(p).is_file()]
-    if missing:
-        raise UserError(f"File not found:\n{missing[0]}")
+    present = [p for p in paths if Path(p).is_file()]
+    if not present:
+        raise UserError(f"File not found:\n{paths[0]}")
     if action_id == "resize" and "preset_specs" not in opts:
         # engines don't read settings; inject the user's preset table here
         opts = {**opts, "preset_specs": settings.get("presets", {})}
-    namer = OutputNamer(resolve_output_dir(settings, paths))
-    return fn(paths, opts, namer, progress)
+    namer = OutputNamer(resolve_output_dir(settings, present))
+    set_cancel(cancel)
+    try:
+        results = fn(present, opts, namer, progress)
+    finally:
+        set_cancel(None)
+    return _merge_missing(paths, present, results)
+
+
+def _merge_missing(
+    paths: list[str], present: list[str], results: list[Result]
+) -> list[Result]:
+    """Re-attach per-file failures for paths that vanished before the run.
+
+    One stale path must not abort a whole batch: files that disappeared are
+    reported as failures and every other result keeps its place in the
+    original selection order.
+    """
+    if len(present) == len(paths):
+        return results
+    by_input: dict[str, Result] = {}
+    for r in results:
+        by_input.setdefault(r.input, r)
+    merged: list[Result] = []
+    for p in paths:
+        hit = by_input.pop(p, None)
+        if hit is not None:
+            merged.append(hit)
+        elif Path(p).is_file():
+            continue  # produced under another key; appended below
+        else:
+            merged.append(Result(input=p, output=None, ok=False,
+                                 error="File not found (moved or deleted?)"))
+    merged.extend(r for r in results if r.input in by_input)
+    return merged

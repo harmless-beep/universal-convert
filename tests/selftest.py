@@ -239,9 +239,10 @@ def test_images(fx):
 
     results = run_action("compress", [fx["photo_a"]],
                          {"quality": 60, "auto": False}, s)
-    src_kb = Path(fx["photo_a"]).stat().st_size
-    check("compress jpg quality 60", results[0].ok and
-          results[0].output.endswith(".png") or results[0].ok,
+    out_file = results[0].output if results[0].ok else ""
+    check("compress writes an output file",
+          bool(out_file) and Path(out_file).is_file()
+          and Path(out_file).suffix == ".png",
           str([r.error for r in results]))
 
     results = run_action("compress", [fx["alpha"]],
@@ -387,6 +388,67 @@ def test_office(fx, office):
           str([x.error for x in results]))
 
 
+def test_robustness(fx):
+    """One bad file / a cancelled run must never poison the whole batch."""
+    import threading
+
+    print("\n== robustness ==")
+    s = settings_for(outdir_for("robust"))
+    resize = {"mode": "pixels", "width": 160, "keep_aspect": True}
+
+    ghost = str(WORK / "fixtures" / "gone.png")
+    results = run_action("resize", [fx["photo_a"], ghost, fx["photo_b"]],
+                         dict(resize), s)
+    check("missing file fails on its own, batch continues",
+          len(results) == 3 and results[0].ok and not results[1].ok
+          and results[2].ok,
+          str([(r.input, r.ok) for r in results]))
+    check("missing file says why", "not found" in results[1].error.lower(),
+          results[1].error)
+    check("selection order preserved",
+          [Path(r.input).name for r in results]
+          == ["photo_a.png", "gone.png", "photo_b.png"],
+          str([r.input for r in results]))
+
+    out_dir = outdir_for("robust")
+    written = set(out_dir.glob("*"))
+
+    armed = threading.Event()
+    armed.set()
+    results = run_action("resize", [fx["photo_a"], fx["photo_b"]],
+                         dict(resize), s, cancel=armed)
+    check("cancel before the start: every file reported, nothing written",
+          len(results) == 2 and all("Cancelled" in r.error for r in results)
+          and set(out_dir.glob("*")) == written,
+          str([(r.ok, r.error) for r in results]))
+    check("summary reports a stopped run",
+          summarize(results).startswith("Stopped after 0 of 2"),
+          summarize(results))
+
+    after_one = threading.Event()
+
+    def stop_after_first(done: int, _total: int, _name: str) -> None:
+        if done >= 1:
+            after_one.set()
+
+    results = run_action("resize", [fx["photo_a"], fx["photo_b"], fx["alpha"]],
+                         {"mode": "pixels", "width": 100, "keep_aspect": True},
+                         s, progress=stop_after_first, cancel=after_one)
+    ok = [r for r in results if r.ok]
+    stopped = [r for r in results if "Cancelled" in r.error]
+    check("cancel mid-run stops between files (no half-written output)",
+          len(results) == 3 and len(ok) == 1 and len(stopped) == 2,
+          str([(Path(r.input).name, r.ok, r.error) for r in results]))
+    check("stopped run counts are honest",
+          summarize(results).startswith("Stopped after 1 of 3"),
+          summarize(results))
+
+    # the cancel switch must not leak into the next run
+    results = run_action("resize", [fx["photo_a"]], dict(resize), s)
+    check("cancel state cleared for the next run", results[0].ok,
+          str([r.error for r in results]))
+
+
 def test_aggregation():
     print("\n== aggregation (Windows multi-select) ==")
     if sys.platform != "win32":
@@ -437,6 +499,30 @@ def test_cli(fx):
     check("cli --info", proc.returncode == 0 and "pdf_split" in proc.stdout,
           proc.stdout + proc.stderr)
 
+    notes = WORK / "notes.txt"
+    notes.write_text("not an image", encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "main.py"), "--cli", "--action", "resize",
+         "--width", "120", "--out", f"custom:{out}", fx["photo_a"], str(notes)],
+        capture_output=True, text=True, timeout=60, cwd=str(ROOT),
+    )
+    check("cli skips unsupported files",
+          proc.returncode == 0 and "Skipping 1 unsupported" in proc.stdout
+          and "FAIL" not in proc.stdout,
+          proc.stdout + proc.stderr)
+
+    bad = WORK / "bad.png"
+    bad.write_bytes(b"\x89PNG\r\n\x1a\n" + b"garbage" * 5)
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "main.py"), "--cli", "--action", "convert",
+         "--format", "jpg", "--out", f"custom:{out}", str(bad)],
+        capture_output=True, text=True, timeout=60, cwd=str(ROOT),
+    )
+    check("cli prints why a file failed",
+          proc.returncode == 1 and "FAIL" in proc.stdout
+          and "bad.png ->" in proc.stdout,
+          proc.stdout + proc.stderr)
+
 
 def main() -> int:
     print(f"Universal Convert selftest  (workdir: {WORK})")
@@ -448,10 +534,11 @@ def main() -> int:
     test_images(fx)
     test_pdf(fx)
     test_office(fx, office)
+    test_robustness(fx)
     test_aggregation()
     test_cli(fx)
 
-    print(f"\n{summarize([]) and ''}RESULT: {PASS} passed, {FAIL} failed")
+    print(f"\nRESULT: {PASS} passed, {FAIL} failed")
     shutil.rmtree(WORK, ignore_errors=True)
     return 1 if FAIL else 0
 

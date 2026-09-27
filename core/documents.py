@@ -16,7 +16,7 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
-from .batch import OutputNamer, Result
+from .batch import CANCELLED, OutputNamer, Result, cancelled
 from .errors import UserError, get_logger
 
 Progress = Callable[[int, int, str], None] | None
@@ -53,6 +53,9 @@ def do_office_to_pdf(
     done = 0
 
     for batch in _unique_stem_batches(paths):
+        if cancelled():
+            get_logger().info("cancelled: office->pdf stopped before a batch")
+            break
         tmp = Path(tempfile.mkdtemp(prefix="uc-lo-pdf-"))
         try:
             produced, missing = convert_to(batch, "pdf", tmp, strict=False)
@@ -76,10 +79,34 @@ def do_office_to_pdf(
                     )
                 if progress:
                     progress(done, len(paths), Path(src).name)
+                if cancelled():
+                    break
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    return [results[p] for p in paths if p in results]
+    return _in_order(paths, results)
+
+
+def _in_order(paths: list[str], produced: dict[str, Result]) -> list[Result]:
+    """One result per input, in the caller's order.
+
+    Keys may be the normalized path (`str(Path(p))`) rather than exactly
+    what the caller passed - anything not produced (or dropped by
+    cancellation) becomes an explicit failure instead of disappearing,
+    which used to make the summary under-report the batch.
+    """
+    out: list[Result] = []
+    for p in paths:
+        r = produced.pop(str(Path(p)), None)
+        if r is None:
+            r = produced.pop(p, None)
+        if r is None:
+            r = Result(input=p, output=None, ok=False,
+                       error=CANCELLED if cancelled()
+                       else "No output was produced for this file.")
+        r.input = p
+        out.append(r)
+    return out
 
 
 def do_pptx_to_images(

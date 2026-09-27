@@ -19,7 +19,14 @@ from tkinter.font import Font
 
 from core import detect
 from core.batch import first_output, summarize
-from core.errors import UserError, describe_paths, friendly_message, get_logger
+from core.errors import (
+    LOG_FILE,
+    UserError,
+    describe_paths,
+    friendly_message,
+    get_logger,
+    log_exception,
+)
 from core.runner import run_action
 from core.settings import Settings
 
@@ -34,6 +41,8 @@ class ConversionDialog:
         self.worker: threading.Thread | None = None
         self.state: dict = {"running": False, "done": False,
                             "progress": (0, 1, ""), "results": None, "error": ""}
+        self._run_total = 0     # files actually handed to the engine
+        self._bar: tuple[int, int] | None = None   # last file-level bar position
 
         self.root = tk.Tk()
         self.root.title("Convert With...")
@@ -114,14 +123,49 @@ class ConversionDialog:
 
         btns = ttk.Frame(self.root)
         btns.pack(fill="x", padx=10, pady=8)
+        self._cancel_event = threading.Event()
         self.convert_btn = ttk.Button(btns, text="Convert", command=self._convert)
         self.convert_btn.pack(side="right")
+        self.cancel_btn = ttk.Button(btns, text="Cancel",
+                                     command=self._cancel_run,
+                                     state="disabled")
+        self.cancel_btn.pack(side="right", padx=(0, 8))
         self.close_btn = ttk.Button(btns, text="Close", command=self._close)
         self.close_btn.pack(side="right", padx=(0, 8))
 
         self._build_option_panels()
         self._on_action_change()
         self.root.protocol("WM_DELETE_WINDOW", self._close)
+        if not self.actions:
+            self.convert_btn.state(["disabled"])
+        self.root.bind("<Escape>", self._on_escape)
+        self.root.bind("<Return>", self._on_return)
+        # Tk swallows callback exceptions (invisible under pythonw): log them
+        # and put a visible line in the status area instead.
+        self.root.report_callback_exception = self._callback_error
+
+    # ------------------------------------------------------------- keyboard
+    def _on_escape(self, _event=None) -> str:
+        self._close()
+        return "break"
+
+    def _on_return(self, _event=None) -> str | None:
+        widget = self.root.focus_get()
+        # Let the focused control handle Return first (entries, buttons...).
+        if widget is not None and widget.winfo_class() in (
+                "TEntry", "Entry", "TSpinbox", "Spinbox", "TCombobox",
+                "ComboBox", "TButton", "Button"):
+            return None
+        self._convert()
+        return "break"
+
+    def _callback_error(self, _exc_type, exc_value, _tb) -> None:
+        log_exception("dialog callback failed", exc_value)
+        try:
+            self.status.config(text=friendly_message(exc_value),
+                               foreground="#a02222")
+        except Exception:  # noqa: BLE001 - status may already be gone
+            pass
 
     # ------------------------------------------------------------------ run
     def run(self) -> None:
@@ -431,38 +475,78 @@ class ConversionDialog:
             opts["ranges"] = (opts.get("ranges") or "1").strip()
         return opts
 
-    def _convert(self) -> None:
-        action = self.action_var.get()
-        if not action:
+    def _run_files(self) -> list[str]:
+        """The files actually handed to the engine.
+
+        `actions_for` only ever offers actions that fit the *supported* files,
+        so anything unsupported is dropped here - otherwise it would fail as a
+        spurious error (and drag the output folder along with it).
+        """
+        supported = set(self.cat.supported)
+        return [p for p in self.files if p in supported]
+
+    def _cancel_run(self) -> None:
+        """Ask the worker to stop after the file it is on right now."""
+        if not (self.state.get("running") and not self.state.get("done")):
             return
+        self._cancel_event.set()
+        self.cancel_btn.state(["disabled"])
+        self.status.config(text="Stopping after the current file…",
+                           foreground="#a05a00")
+
+    def _convert(self) -> None:
+        if self.state.get("running") and not self.state.get("done"):
+            return  # already converting; ignore the extra click
+        action = self.action_var.get()
+        to_run = self._run_files()
+        if not action or not to_run:
+            self.root.bell()
+            self.status.config(
+                foreground="#a05a00",
+                text=("Nothing to convert: none of the selected files are "
+                      "supported." if not to_run
+                      else "Pick what should happen first."),
+            )
+            return
+
         opts = self._collect_opts()
-        self.settings.set("output.folder_mode", self.out_var.get())
-        self.settings.remember_last(action, opts)
-        self.settings.save()
+        try:
+            self.settings.set("output.folder_mode", self.out_var.get())
+            self.settings.remember_last(action, opts)
+            self.settings.save()
+        except Exception as exc:  # noqa: BLE001 - never block a conversion
+            log_exception("could not remember these settings", exc)
 
         self.convert_btn.state(["disabled"])
-        self.progress.config(mode="determinate", value=0, maximum=max(len(self.files), 1))
-        self.status.config(text="Working…")
+        self._cancel_event.clear()
+        self.cancel_btn.state(["!disabled"])
+        self._run_total = len(to_run)
+        self._bar = (self._run_total, 0)
+        self.progress.config(mode="determinate", value=0,
+                             maximum=max(self._run_total, 1))
+        self.status.config(text="Working…", foreground="#555")
         self.state = {"running": True, "done": False,
-                      "progress": (0, len(self.files), ""), "results": None,
+                      "progress": (0, self._run_total, ""), "results": None,
                       "error": ""}
 
         settings = self.settings
 
         def work():
             try:
-                results = run_action(action, self.files, opts, settings,
-                                     progress=self._thread_progress)
+                results = run_action(action, to_run, opts, settings,
+                                     progress=self._thread_progress,
+                                     cancel=self._cancel_event)
                 self.state["results"] = results
             except UserError as exc:
                 self.state["error"] = exc.message
             except Exception as exc:  # noqa: BLE001
                 get_logger().error("dialog worker: %s", exc)
-                from core.errors import log_exception
-
                 log_exception("conversion failed", exc)
                 self.state["error"] = friendly_message(exc)
-            self.state["done"] = True
+            finally:
+                # Always release the UI, even if the error handler itself
+                # failed - otherwise the dialog locks up with no way out.
+                self.state["done"] = True
 
         self.worker = threading.Thread(target=work, daemon=True)
         self.worker.start()
@@ -474,9 +558,20 @@ class ConversionDialog:
 
     def _poll(self) -> None:
         done, total, name = self.state["progress"]
-        self.progress.config(maximum=max(total, 1), value=done)
+        run_total = self._run_total or 1
+        if total == run_total or run_total == 1:
+            # file-level report (or page-level inside a single-file run);
+            # anything else is a mid-file counter and must not drag the
+            # bar backwards.
+            self._bar = (max(total, 1), min(done, total))
+        if self._bar:
+            self.progress.config(maximum=self._bar[0], value=self._bar[1])
         if name:
-            self.status.config(text=f"Converting {name}…")
+            if total == run_total:
+                self.status.config(
+                    text=f"Converting {name}…  ({done}/{total})")
+            else:
+                self.status.config(text=f"Converting {name}…")
         if self.state["done"]:
             self._finish()
             return
@@ -484,12 +579,21 @@ class ConversionDialog:
 
     def _finish(self) -> None:
         self.convert_btn.state(["!disabled"])
+        self.cancel_btn.state(["disabled"])
         error = self.state["error"]
         results = self.state["results"]
         if error:
             self.status.config(text=error, foreground="#a02222")
             return
-        assert results is not None
+        if results is None:
+            # worker died without results and without an error we could show
+            get_logger().error("conversion ended without results")
+            self.status.config(
+                text=f"The conversion stopped unexpectedly. "
+                     f"Details: {LOG_FILE}",
+                foreground="#a02222",
+            )
+            return
         self.results = results
         ok = sum(1 for r in results if r.ok)
         failed = len(results) - ok
@@ -502,31 +606,68 @@ class ConversionDialog:
         win.title("Conversion results")
         win.transient(self.root)
         win.resizable(False, False)
+        failed = [r for r in results if not r.ok
+                  and not r.error.startswith("Cancelled")]
+        stopped = sum(1 for r in results if not r.ok
+                      and r.error.startswith("Cancelled"))
+
         ttk.Label(win, text=summarize(results),
                   font=("TkDefaultFont", 10, "bold")).pack(anchor="w",
                                                            padx=12, pady=(10, 4))
-        box = ttk.Frame(win)
-        box.pack(fill="both", expand=True, padx=12)
-        for r in results[:12]:
+
+        holder = ttk.Frame(win)
+        holder.pack(fill="both", expand=True, padx=(12, 6))
+        body = tk.Text(holder, width=64, height=min(len(results), 18),
+                       wrap="word", relief="solid", borderwidth=1,
+                       padx=8, pady=6, font=("TkDefaultFont", 9),
+                       cursor="arrow")
+        vsb = ttk.Scrollbar(holder, orient="vertical", command=body.yview)
+        body.configure(yscrollcommand=vsb.set)
+        body.tag_configure("ok", foreground="#1a7a2e")
+        body.tag_configure("bad", foreground="#a02222")
+        for r in results:
             mark = "✓" if r.ok else "✗"
-            color = "#1a7a2e" if r.ok else "#a02222"
             line = f"{mark}  {Path(r.input).name}"
-            if r.note:
-                line += f"  —  {r.note}"
-            elif r.ok and r.output:
-                line += f"  →  {Path(r.output).name}"
-            ttk.Label(box, text=line, foreground=color).pack(anchor="w")
-        if len(results) > 12:
-            ttk.Label(box, text=f"… and {len(results) - 12} more",
-                      foreground="#555").pack(anchor="w")
-        if not all(r.ok for r in results):
-            ttk.Label(win, foreground="#a02222", wraplength=420,
-                      text="Some files failed. Details: " + str(
-                          Path(__file__).resolve().parent.parent / "logs"
-                      )).pack(anchor="w", padx=12)
-        ttk.Button(win, text="OK", command=win.destroy).pack(pady=(6, 10))
+            if r.ok:
+                if r.note:
+                    line += f"  —  {r.note}"
+                elif r.output:
+                    line += f"  →  {Path(r.output).name}"
+            else:
+                line += f"  —  {r.error or 'failed'}"
+            body.insert("end", line + "\n", "ok" if r.ok else "bad")
+        body.configure(state="disabled")
+        vsb.pack(side="right", fill="y")
+        body.pack(side="left", fill="both", expand=True)
+
+        if failed:
+            ttk.Label(
+                win, foreground="#555", wraplength=430, justify="left",
+                text=f"{len(failed)} file{'s' if len(failed) != 1 else ''} "
+                     f"failed. The rest were written normally - the exact "
+                     f"reasons are next to each file above.",
+            ).pack(anchor="w", padx=12, pady=(4, 0))
+        elif stopped:
+            ttk.Label(
+                win, foreground="#555", wraplength=430, justify="left",
+                text=f"Stopped early: {stopped} file"
+                     f"{'s' if stopped != 1 else ''} were not processed.",
+            ).pack(anchor="w", padx=12, pady=(4, 0))
+
+        row = ttk.Frame(win)
+        row.pack(fill="x", padx=12, pady=(6, 10))
+        if failed:
+            ttk.Button(row, text="Open log", command=self._open_log).pack(
+                side="left")
+        ttk.Button(row, text="OK", command=win.destroy).pack(side="right")
         win.attributes("-topmost", True)
         win.after(200, lambda: win.attributes("-topmost", False))
+
+    def _open_log(self) -> None:
+        from platform_util.openfolder import open_file
+
+        if not open_file(str(LOG_FILE)):
+            self.status.config(text=f"Log: {LOG_FILE}", foreground="#555")
 
     def _close(self) -> None:
         if self.state.get("running") and not self.state.get("done"):

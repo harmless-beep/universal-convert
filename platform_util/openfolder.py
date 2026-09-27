@@ -16,6 +16,30 @@ from pathlib import Path
 from core.errors import get_logger
 
 
+def open_file(target: str | None) -> bool:
+    """Open a file with whatever the OS uses for that type (log, output, ...)."""
+    log = get_logger()
+    if not target:
+        return False
+    path = Path(target)
+    try:
+        if sys.platform == "win32":
+            os.startfile(str(path))  # noqa: S606 - intentional shell open
+            return True
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+            return True
+        if shutil.which("xdg-open"):
+            subprocess.Popen(["xdg-open", str(path)],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            return True
+        return False
+    except Exception as exc:  # noqa: BLE001 - never fail over a click
+        log.warning("open_file failed: %s", exc)
+        return False
+
+
 def open_output(target: str | None) -> bool:
     """Open the folder containing `target` (selecting it where supported)."""
     log = get_logger()
